@@ -119,6 +119,15 @@ __isl_null isl_local_space *isl_local_space_free(
 	return NULL;
 }
 
+/* Is the local space that of a parameter domain?
+ */
+int isl_local_space_is_params(__isl_keep isl_local_space *ls)
+{
+	if (!ls)
+		return -1;
+	return isl_space_is_params(ls->dim);
+}
+
 /* Is the local space that of a set?
  */
 int isl_local_space_is_set(__isl_keep isl_local_space *ls)
@@ -232,6 +241,20 @@ unsigned isl_local_space_offset(__isl_keep isl_local_space *ls,
 	case isl_dim_div:	return 1 + dim->nparam + dim->n_in + dim->n_out;
 	default:		return 0;
 	}
+}
+
+/* Return the position of the dimension of the given type and name
+ * in "ls".
+ * Return -1 if no such dimension can be found.
+ */
+int isl_local_space_find_dim_by_name(__isl_keep isl_local_space *ls,
+	enum isl_dim_type type, const char *name)
+{
+	if (!ls)
+		return -1;
+	if (type == isl_dim_div)
+		return -1;
+	return isl_space_find_dim_by_name(ls->dim, type, name);
 }
 
 /* Does the given dimension have a name?

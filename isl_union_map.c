@@ -1,12 +1,15 @@
 /*
  * Copyright 2010-2011 INRIA Saclay
  * Copyright 2013-2014 Ecole Normale Superieure
+ * Copyright 2014      INRIA Rocquencourt
  *
  * Use of this software is governed by the MIT license
  *
  * Written by Sven Verdoolaege, INRIA Saclay - Ile-de-France,
  * Parc Club Orsay Universite, ZAC des vignes, 4 rue Jacques Monod,
  * 91893 Orsay, France 
+ * and Inria Paris - Rocquencourt, Domaine de Voluceau - Rocquencourt,
+ * B.P. 105 - 78153 Le Chesnay, France
  */
 
 #define ISL_DIM_H
@@ -35,6 +38,15 @@ unsigned isl_union_map_dim(__isl_keep isl_union_map *umap,
 			"can only reference parameters", return 0);
 
 	return isl_space_dim(umap->dim, type);
+}
+
+/* Return the number of parameters of "uset", where "type"
+ * is required to be set to isl_dim_param.
+ */
+unsigned isl_union_set_dim(__isl_keep isl_union_set *uset,
+	enum isl_dim_type type)
+{
+	return isl_union_map_dim(uset, type);
 }
 
 /* Return the id of the specified dimension.
@@ -118,6 +130,18 @@ __isl_give isl_space *isl_union_map_get_space(__isl_keep isl_union_map *umap)
 	if (!umap)
 		return NULL;
 	return isl_space_copy(umap->dim);
+}
+
+/* Return the position of the parameter with the given name
+ * in "umap".
+ * Return -1 if no such dimension can be found.
+ */
+int isl_union_map_find_dim_by_name(__isl_keep isl_union_map *umap,
+	enum isl_dim_type type, const char *name)
+{
+	if (!umap)
+		return -1;
+	return isl_space_find_dim_by_name(umap->dim, type, name);
 }
 
 __isl_give isl_space *isl_union_set_get_space(__isl_keep isl_union_set *uset)
@@ -1397,6 +1421,34 @@ __isl_give isl_union_map *isl_union_map_range_product(
 	return bin_op(umap1, umap2, &range_product_entry);
 }
 
+/* If data->map A -> B and "map2" C -> D have the same range space,
+ * then add (A, C) -> (B * D) to data->res.
+ */
+static int flat_domain_product_entry(void **entry, void *user)
+{
+	struct isl_union_map_bin_data *data = user;
+	isl_map *map2 = *entry;
+
+	if (!isl_space_tuple_is_equal(data->map->dim, isl_dim_out,
+				 map2->dim, isl_dim_out))
+		return 0;
+
+	map2 = isl_map_flat_domain_product(isl_map_copy(data->map),
+					  isl_map_copy(map2));
+
+	data->res = isl_union_map_add_map(data->res, map2);
+
+	return 0;
+}
+
+/* Given two maps A -> B and C -> D, construct a map (A, C) -> (B * D).
+ */
+__isl_give isl_union_map *isl_union_map_flat_domain_product(
+	__isl_take isl_union_map *umap1, __isl_take isl_union_map *umap2)
+{
+	return bin_op(umap1, umap2, &flat_domain_product_entry);
+}
+
 static int flat_range_product_entry(void **entry, void *user)
 {
 	struct isl_union_map_bin_data *data = user;
@@ -1798,6 +1850,36 @@ __isl_give isl_union_map *isl_union_map_range_map(
 	return cond_un_op(umap, &range_map_entry);
 }
 
+/* Check if "set" is of the form A[B -> C].
+ * If so, add A[B -> C] -> B to "res".
+ */
+static int wrapped_domain_map_entry(void **entry, void *user)
+{
+	isl_set *set = *entry;
+	isl_union_set **res = user;
+	int wrapping;
+
+	wrapping = isl_set_is_wrapping(set);
+	if (wrapping < 0)
+		return -1;
+	if (!wrapping)
+		return 0;
+
+	*res = isl_union_map_add_map(*res,
+				isl_set_wrapped_domain_map(isl_set_copy(set)));
+
+	return 0;
+}
+
+/* Given a collection of wrapped maps of the form A[B -> C],
+ * return the collection of maps A[B -> C] -> B.
+ */
+__isl_give isl_union_map *isl_union_set_wrapped_domain_map(
+	__isl_take isl_union_set *uset)
+{
+	return cond_un_op(uset, &wrapped_domain_map_entry);
+}
+
 static int deltas_entry(void **entry, void *user)
 {
 	isl_map *map = *entry;
@@ -1851,6 +1933,131 @@ static int identity_entry(void **entry, void *user)
 __isl_give isl_union_map *isl_union_set_identity(__isl_take isl_union_set *uset)
 {
 	return cond_un_op(uset, &identity_entry);
+}
+
+/* If "map" is of the form [A -> B] -> C, then add A -> C to "res".
+ */
+static int domain_factor_domain_entry(void **entry, void *user)
+{
+	isl_map *map = *entry;
+	isl_union_map **res = user;
+
+	if (!isl_map_domain_is_wrapping(map))
+		return 0;
+
+	*res = isl_union_map_add_map(*res,
+			    isl_map_domain_factor_domain(isl_map_copy(map)));
+
+	return *res ? 0 : -1;
+}
+
+/* For each map in "umap" of the form [A -> B] -> C,
+ * construct the map A -> C and collect the results.
+ */
+__isl_give isl_union_map *isl_union_map_domain_factor_domain(
+	__isl_take isl_union_map *umap)
+{
+	return cond_un_op(umap, &domain_factor_domain_entry);
+}
+
+/* If "map" is of the form [A -> B] -> C, then add B -> C to "res".
+ */
+static int domain_factor_range_entry(void **entry, void *user)
+{
+	isl_map *map = *entry;
+	isl_union_map **res = user;
+
+	if (!isl_map_domain_is_wrapping(map))
+		return 0;
+
+	*res = isl_union_map_add_map(*res,
+				isl_map_domain_factor_range(isl_map_copy(map)));
+
+	return *res ? 0 : -1;
+}
+
+/* For each map in "umap" of the form [A -> B] -> C,
+ * construct the map B -> C and collect the results.
+ */
+__isl_give isl_union_map *isl_union_map_domain_factor_range(
+	__isl_take isl_union_map *umap)
+{
+	return cond_un_op(umap, &domain_factor_range_entry);
+}
+
+/* If "map" is of the form A -> [B -> C], then add A -> C to "res".
+ */
+static int range_factor_range_entry(void **entry, void *user)
+{
+	isl_map *map = *entry;
+	isl_union_map **res = user;
+
+	if (!isl_map_range_is_wrapping(map))
+		return 0;
+
+	*res = isl_union_map_add_map(*res,
+				isl_map_range_factor_range(isl_map_copy(map)));
+
+	return *res ? 0 : -1;
+}
+
+/* For each map in "umap" of the form A -> [B -> C],
+ * construct the map A -> C and collect the results.
+ */
+__isl_give isl_union_map *isl_union_map_range_factor_range(
+	__isl_take isl_union_map *umap)
+{
+	return cond_un_op(umap, &range_factor_range_entry);
+}
+
+/* If "map" is of the form [A -> B] -> [C -> D], then add A -> C to "res".
+ */
+static int factor_domain_entry(void **entry, void *user)
+{
+	isl_map *map = *entry;
+	isl_union_map **res = user;
+
+	if (!isl_map_domain_is_wrapping(map) || !isl_map_range_is_wrapping(map))
+		return 0;
+
+	*res = isl_union_map_add_map(*res,
+				isl_map_factor_domain(isl_map_copy(map)));
+
+	return *res ? 0 : -1;
+}
+
+/* For each map in "umap" of the form [A -> B] -> [C -> D],
+ * construct the map A -> C and collect the results.
+ */
+__isl_give isl_union_map *isl_union_map_factor_domain(
+	__isl_take isl_union_map *umap)
+{
+	return cond_un_op(umap, &factor_domain_entry);
+}
+
+/* If "map" is of the form [A -> B] -> [C -> D], then add B -> D to "res".
+ */
+static int factor_range_entry(void **entry, void *user)
+{
+	isl_map *map = *entry;
+	isl_union_map **res = user;
+
+	if (!isl_map_domain_is_wrapping(map) || !isl_map_range_is_wrapping(map))
+		return 0;
+
+	*res = isl_union_map_add_map(*res,
+				isl_map_factor_range(isl_map_copy(map)));
+
+	return *res ? 0 : -1;
+}
+
+/* For each map in "umap" of the form [A -> B] -> [C -> D],
+ * construct the map B -> D and collect the results.
+ */
+__isl_give isl_union_map *isl_union_map_factor_range(
+	__isl_take isl_union_map *umap)
+{
+	return cond_un_op(umap, &factor_range_entry);
 }
 
 static int unwrap_entry(void **entry, void *user)
@@ -1993,6 +2200,80 @@ int isl_union_set_is_strict_subset(__isl_keep isl_union_set *uset1,
 	__isl_keep isl_union_set *uset2)
 {
 	return isl_union_map_is_strict_subset(uset1, uset2);
+}
+
+/* Internal data structure for isl_union_map_is_disjoint.
+ * umap2 is the union map with which we are comparing.
+ * is_disjoint is initialized to 1 and is set to 0 as soon
+ * as the union maps turn out not to be disjoint.
+ */
+struct isl_union_map_is_disjoint_data {
+	isl_union_map *umap2;
+	int is_disjoint;
+};
+
+/* Check if "map" is disjoint from data->umap2 and abort
+ * the search if it is not.
+ */
+static int is_disjoint_entry(void **entry, void *user)
+{
+	struct isl_union_map_is_disjoint_data *data = user;
+	uint32_t hash;
+	struct isl_hash_table_entry *entry2;
+	isl_map *map = *entry;
+
+	hash = isl_space_get_hash(map->dim);
+	entry2 = isl_hash_table_find(data->umap2->dim->ctx, &data->umap2->table,
+				     hash, &has_dim, map->dim, 0);
+	if (!entry2)
+		return 0;
+
+	data->is_disjoint = isl_map_is_disjoint(map, entry2->data);
+	if (data->is_disjoint < 0 || !data->is_disjoint)
+		return -1;
+
+	return 0;
+}
+
+/* Are "umap1" and "umap2" disjoint?
+ */
+int isl_union_map_is_disjoint(__isl_keep isl_union_map *umap1,
+	__isl_keep isl_union_map *umap2)
+{
+	struct isl_union_map_is_disjoint_data data = { NULL, 1 };
+
+	umap1 = isl_union_map_copy(umap1);
+	umap2 = isl_union_map_copy(umap2);
+	umap1 = isl_union_map_align_params(umap1,
+						isl_union_map_get_space(umap2));
+	umap2 = isl_union_map_align_params(umap2,
+						isl_union_map_get_space(umap1));
+
+	if (!umap1 || !umap2)
+		goto error;
+
+	data.umap2 = umap2;
+	if (isl_hash_table_foreach(umap1->dim->ctx, &umap1->table,
+				   &is_disjoint_entry, &data) < 0 &&
+	    data.is_disjoint)
+		goto error;
+
+	isl_union_map_free(umap1);
+	isl_union_map_free(umap2);
+
+	return data.is_disjoint;
+error:
+	isl_union_map_free(umap1);
+	isl_union_map_free(umap2);
+	return -1;
+}
+
+/* Are "uset1" and "uset2" disjoint?
+ */
+int isl_union_set_is_disjoint(__isl_keep isl_union_set *uset1,
+	__isl_keep isl_union_set *uset2)
+{
+	return isl_union_map_is_disjoint(uset1, uset2);
 }
 
 static int sample_entry(void **entry, void *user)
@@ -3143,4 +3424,52 @@ __isl_give isl_union_map *isl_union_map_project_out(
 	isl_union_map_free(umap);
 
 	return data.res;
+}
+
+/* Internal data structure for isl_union_map_involves_dims.
+ * "first" and "n" are the arguments for the isl_map_involves_dims calls.
+ */
+struct isl_union_map_involves_dims_data {
+	unsigned first;
+	unsigned n;
+};
+
+/* Does "map" _not_ involve the data->n parameters starting at data->first?
+ */
+static int map_excludes(__isl_keep isl_map *map, void *user)
+{
+	struct isl_union_map_involves_dims_data *data = user;
+	int involves;
+
+	involves = isl_map_involves_dims(map,
+					isl_dim_param, data->first, data->n);
+	if (involves < 0)
+		return -1;
+	return !involves;
+}
+
+/* Does "umap" involve any of the n parameters starting at first?
+ * "type" is required to be set to isl_dim_param.
+ *
+ * "umap" involves any of those parameters if any of its maps
+ * involve the parameters.  In other words, "umap" does not
+ * involve any of the parameters if all its maps to not
+ * involve the parameters.
+ */
+int isl_union_map_involves_dims(__isl_keep isl_union_map *umap,
+	enum isl_dim_type type, unsigned first, unsigned n)
+{
+	struct isl_union_map_involves_dims_data data = { first, n };
+	int excludes;
+
+	if (type != isl_dim_param)
+		isl_die(isl_union_map_get_ctx(umap), isl_error_invalid,
+			"can only reference parameters", return 0);
+
+	excludes = union_map_forall_user(umap, &map_excludes, &data);
+
+	if (excludes < 0)
+		return -1;
+
+	return !excludes;
 }

@@ -409,6 +409,15 @@ struct {
 	{ &isl_val_2exp, "1", "2" },
 	{ &isl_val_2exp, "2", "4" },
 	{ &isl_val_2exp, "3", "8" },
+	{ &isl_val_inv, "1", "1" },
+	{ &isl_val_inv, "2", "1/2" },
+	{ &isl_val_inv, "1/2", "2" },
+	{ &isl_val_inv, "-2", "-1/2" },
+	{ &isl_val_inv, "-1/2", "-2" },
+	{ &isl_val_inv, "0", "NaN" },
+	{ &isl_val_inv, "NaN", "NaN" },
+	{ &isl_val_inv, "infty", "0" },
+	{ &isl_val_inv, "-infty", "0" },
 };
 
 /* Perform some basic tests of unary operations on isl_val objects.
@@ -1156,6 +1165,8 @@ struct {
 	  "{ [a, b, c] : a <= 15 }" },
 	{ "{ : }", "{ : 1 = 0 }", "{ : }" },
 	{ "{ : 1 = 0 }", "{ : 1 = 0 }", "{ : }" },
+	{ "[M] -> { [x] : exists (e0 = floor((-2 + x)/3): 3e0 = -2 + x) }",
+	  "[M] -> { [3M] }" , "[M] -> { [x] : 1 = 0 }" },
 };
 
 static int test_gist(struct isl_ctx *ctx)
@@ -1167,18 +1178,29 @@ static int test_gist(struct isl_ctx *ctx)
 	int equal;
 
 	for (i = 0; i < ARRAY_SIZE(gist_tests); ++i) {
+		int equal_input;
+		isl_basic_set *copy;
+
 		bset1 = isl_basic_set_read_from_str(ctx, gist_tests[i].set);
 		bset2 = isl_basic_set_read_from_str(ctx, gist_tests[i].context);
+		copy = isl_basic_set_copy(bset1);
 		bset1 = isl_basic_set_gist(bset1, bset2);
 		bset2 = isl_basic_set_read_from_str(ctx, gist_tests[i].gist);
 		equal = isl_basic_set_is_equal(bset1, bset2);
 		isl_basic_set_free(bset1);
 		isl_basic_set_free(bset2);
-		if (equal < 0)
+		bset1 = isl_basic_set_read_from_str(ctx, gist_tests[i].set);
+		equal_input = isl_basic_set_is_equal(bset1, copy);
+		isl_basic_set_free(bset1);
+		isl_basic_set_free(copy);
+		if (equal < 0 || equal_input < 0)
 			return -1;
 		if (!equal)
 			isl_die(ctx, isl_error_unknown,
 				"incorrect gist result", return -1);
+		if (!equal_input)
+			isl_die(ctx, isl_error_unknown,
+				"gist modified input", return -1);
 	}
 
 	test_gist_case(ctx, "gist1");
@@ -2439,6 +2461,7 @@ static int test_subtract(isl_ctx *ctx)
 {
 	int i;
 	isl_union_map *umap1, *umap2;
+	isl_union_pw_multi_aff *upma1, *upma2;
 	isl_union_set *uset;
 	int equal;
 
@@ -2453,6 +2476,24 @@ static int test_subtract(isl_ctx *ctx)
 		equal = isl_union_map_is_equal(umap1, umap2);
 		isl_union_map_free(umap1);
 		isl_union_map_free(umap2);
+		if (equal < 0)
+			return -1;
+		if (!equal)
+			isl_die(ctx, isl_error_unknown,
+				"incorrect subtract domain result", return -1);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(subtract_domain_tests); ++i) {
+		upma1 = isl_union_pw_multi_aff_read_from_str(ctx,
+				subtract_domain_tests[i].minuend);
+		uset = isl_union_set_read_from_str(ctx,
+				subtract_domain_tests[i].subtrahend);
+		upma2 = isl_union_pw_multi_aff_read_from_str(ctx,
+				subtract_domain_tests[i].difference);
+		upma1 = isl_union_pw_multi_aff_subtract_domain(upma1, uset);
+		equal = isl_union_pw_multi_aff_plain_is_equal(upma1, upma2);
+		isl_union_pw_multi_aff_free(upma1);
+		isl_union_pw_multi_aff_free(upma2);
 		if (equal < 0)
 			return -1;
 		if (!equal)
@@ -3344,6 +3385,51 @@ static int test_bin_aff(isl_ctx *ctx)
 	return 0;
 }
 
+struct {
+	__isl_give isl_union_pw_multi_aff *(*fn)(
+		__isl_take isl_union_pw_multi_aff *upma1,
+		__isl_take isl_union_pw_multi_aff *upma2);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} upma_bin_tests[] = {
+	{ &isl_union_pw_multi_aff_add, "{ A[] -> [0]; B[0] -> [1] }",
+	  "{ B[x] -> [2] : x >= 0 }", "{ B[0] -> [3] }" },
+	{ &isl_union_pw_multi_aff_union_add, "{ A[] -> [0]; B[0] -> [1] }",
+	  "{ B[x] -> [2] : x >= 0 }",
+	  "{ A[] -> [0]; B[0] -> [3]; B[x] -> [2] : x >= 1 }" },
+};
+
+/* Perform some basic tests of binary operations on
+ * isl_union_pw_multi_aff objects.
+ */
+static int test_bin_upma(isl_ctx *ctx)
+{
+	int i;
+	isl_union_pw_multi_aff *upma1, *upma2, *res;
+	int ok;
+
+	for (i = 0; i < ARRAY_SIZE(upma_bin_tests); ++i) {
+		upma1 = isl_union_pw_multi_aff_read_from_str(ctx,
+							upma_bin_tests[i].arg1);
+		upma2 = isl_union_pw_multi_aff_read_from_str(ctx,
+							upma_bin_tests[i].arg2);
+		res = isl_union_pw_multi_aff_read_from_str(ctx,
+							upma_bin_tests[i].res);
+		upma1 = upma_bin_tests[i].fn(upma1, upma2);
+		ok = isl_union_pw_multi_aff_plain_is_equal(upma1, res);
+		isl_union_pw_multi_aff_free(upma1);
+		isl_union_pw_multi_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
 int test_aff(isl_ctx *ctx)
 {
 	const char *str;
@@ -3354,6 +3440,8 @@ int test_aff(isl_ctx *ctx)
 	int zero, equal;
 
 	if (test_bin_aff(ctx) < 0)
+		return -1;
+	if (test_bin_upma(ctx) < 0)
 		return -1;
 
 	space = isl_space_set_alloc(ctx, 0, 1);

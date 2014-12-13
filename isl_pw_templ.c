@@ -802,9 +802,9 @@ __isl_give PW *FN(PW,fix_si)(__isl_take PW *pw, enum isl_dim_type type,
 
 /* Restrict the domain of "pw" by combining each cell
  * with "set" through a call to "fn", where "fn" may be
- * isl_set_intersect or isl_set_intersect_params.
+ * isl_set_intersect, isl_set_intersect_params or isl_set_subtract.
  */
-static __isl_give PW *FN(PW,intersect_aligned)(__isl_take PW *pw,
+static __isl_give PW *FN(PW,restrict_domain_aligned)(__isl_take PW *pw,
 	__isl_take isl_set *set,
 	__isl_give isl_set *(*fn)(__isl_take isl_set *set1,
 				    __isl_take isl_set *set2))
@@ -840,7 +840,7 @@ error:
 static __isl_give PW *FN(PW,intersect_domain_aligned)(__isl_take PW *pw,
 	__isl_take isl_set *set)
 {
-	return FN(PW,intersect_aligned)(pw, set, &isl_set_intersect);
+	return FN(PW,restrict_domain_aligned)(pw, set, &isl_set_intersect);
 }
 
 __isl_give PW *FN(PW,intersect_domain)(__isl_take PW *pw,
@@ -853,7 +853,8 @@ __isl_give PW *FN(PW,intersect_domain)(__isl_take PW *pw,
 static __isl_give PW *FN(PW,intersect_params_aligned)(__isl_take PW *pw,
 	__isl_take isl_set *set)
 {
-	return FN(PW,intersect_aligned)(pw, set, &isl_set_intersect_params);
+	return FN(PW,restrict_domain_aligned)(pw, set,
+					&isl_set_intersect_params);
 }
 
 /* Intersect the domain of "pw" with the parameter domain "context".
@@ -863,6 +864,24 @@ __isl_give PW *FN(PW,intersect_params)(__isl_take PW *pw,
 {
 	return FN(PW,align_params_pw_set_and)(pw, context,
 					&FN(PW,intersect_params_aligned));
+}
+
+/* Subtract "domain' from the domain of "pw", assuming their
+ * parameters have been aligned.
+ */
+static __isl_give PW *FN(PW,subtract_domain_aligned)(__isl_take PW *pw,
+	__isl_take isl_set *domain)
+{
+	return FN(PW,restrict_domain_aligned)(pw, domain, &isl_set_subtract);
+}
+
+/* Subtract "domain' from the domain of "pw".
+ */
+__isl_give PW *FN(PW,subtract_domain)(__isl_take PW *pw,
+	__isl_take isl_set *domain)
+{
+	return FN(PW,align_params_pw_set_and)(pw, domain,
+					&FN(PW,subtract_domain_aligned));
 }
 
 /* Compute the gist of "pw" with respect to the domain constraints
@@ -1393,6 +1412,18 @@ __isl_give isl_space *FN(PW,get_domain_space)(__isl_keep PW *pw)
 	return pw ? isl_space_domain(isl_space_copy(pw->dim)) : NULL;
 }
 
+/* Return the position of the dimension of the given type and name
+ * in "pw".
+ * Return -1 if no such dimension can be found.
+ */
+int FN(PW,find_dim_by_name)(__isl_keep PW *pw,
+	enum isl_dim_type type, const char *name)
+{
+	if (!pw)
+		return -1;
+	return isl_space_find_dim_by_name(pw->dim, type, name);
+}
+
 #ifndef NO_RESET_DIM
 /* Reset the space of "pw".  Since we don't know if the elements
  * represent the spaces themselves or their domains, we pass along
@@ -1770,6 +1801,54 @@ __isl_give PW *FN(PW,scale_val)(__isl_take PW *pw, __isl_take isl_val *v)
 #endif
 	for (i = 0; i < pw->n; ++i) {
 		pw->p[i].FIELD = FN(EL,scale_val)(pw->p[i].FIELD,
+						    isl_val_copy(v));
+		if (!pw->p[i].FIELD)
+			goto error;
+	}
+
+	isl_val_free(v);
+	return pw;
+error:
+	isl_val_free(v);
+	FN(PW,free)(pw);
+	return NULL;
+}
+
+/* Divide the pieces of "pw" by "v" and return the result.
+ */
+__isl_give PW *FN(PW,scale_down_val)(__isl_take PW *pw, __isl_take isl_val *v)
+{
+	int i;
+
+	if (!pw || !v)
+		goto error;
+
+	if (isl_val_is_one(v)) {
+		isl_val_free(v);
+		return pw;
+	}
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_val_get_ctx(v), isl_error_invalid,
+			"expecting rational factor", goto error);
+	if (isl_val_is_zero(v))
+		isl_die(isl_val_get_ctx(v), isl_error_invalid,
+			"cannot scale down by zero", goto error);
+
+	if (pw->n == 0) {
+		isl_val_free(v);
+		return pw;
+	}
+	pw = FN(PW,cow)(pw);
+	if (!pw)
+		goto error;
+
+#ifdef HAS_TYPE
+	if (isl_val_is_neg(v))
+		pw->type = isl_fold_type_negate(pw->type);
+#endif
+	for (i = 0; i < pw->n; ++i) {
+		pw->p[i].FIELD = FN(EL,scale_down_val)(pw->p[i].FIELD,
 						    isl_val_copy(v));
 		if (!pw->p[i].FIELD)
 			goto error;

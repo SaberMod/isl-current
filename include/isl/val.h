@@ -46,6 +46,7 @@ __isl_give isl_val *isl_val_set_si(__isl_take isl_val *v, long i);
 
 __isl_give isl_val *isl_val_abs(__isl_take isl_val *v);
 __isl_give isl_val *isl_val_neg(__isl_take isl_val *v);
+__isl_give isl_val *isl_val_inv(__isl_take isl_val *v);
 __isl_give isl_val *isl_val_floor(__isl_take isl_val *v);
 __isl_give isl_val *isl_val_ceil(__isl_take isl_val *v);
 __isl_give isl_val *isl_val_trunc(__isl_take isl_val *v);
@@ -86,6 +87,7 @@ int isl_val_gt(__isl_keep isl_val *v1, __isl_keep isl_val *v2);
 int isl_val_ge(__isl_keep isl_val *v1, __isl_keep isl_val *v2);
 int isl_val_eq(__isl_keep isl_val *v1, __isl_keep isl_val *v2);
 int isl_val_ne(__isl_keep isl_val *v1, __isl_keep isl_val *v2);
+int isl_val_abs_eq(__isl_keep isl_val *v1, __isl_keep isl_val *v2);
 
 int isl_val_is_divisible_by(__isl_keep isl_val *v1, __isl_keep isl_val *v2);
 

@@ -276,6 +276,22 @@ int isl_aff_dim(__isl_keep isl_aff *aff, enum isl_dim_type type)
 	return isl_local_space_dim(aff->ls, type);
 }
 
+/* Return the position of the dimension of the given type and name
+ * in "aff".
+ * Return -1 if no such dimension can be found.
+ */
+int isl_aff_find_dim_by_name(__isl_keep isl_aff *aff, enum isl_dim_type type,
+	const char *name)
+{
+	if (!aff)
+		return -1;
+	if (type == isl_dim_out)
+		return -1;
+	if (type == isl_dim_in)
+		type = isl_dim_set;
+	return isl_local_space_find_dim_by_name(aff->ls, type, name);
+}
+
 __isl_give isl_space *isl_aff_get_domain_space(__isl_keep isl_aff *aff)
 {
 	return aff ? isl_local_space_get_space(aff->ls) : NULL;
@@ -623,6 +639,33 @@ __isl_give isl_val *isl_aff_get_coefficient_val(__isl_keep isl_aff *aff,
 	pos += isl_local_space_offset(aff->ls, type);
 	v = isl_val_rat_from_isl_int(ctx, aff->v->el[1 + pos], aff->v->el[0]);
 	return isl_val_normalize(v);
+}
+
+/* Return the sign of the coefficient of the variable of type "type"
+ * at position "pos" of "aff".
+ */
+int isl_aff_coefficient_sgn(__isl_keep isl_aff *aff, enum isl_dim_type type,
+	int pos)
+{
+	isl_ctx *ctx;
+
+	if (!aff)
+		return 0;
+
+	ctx = isl_aff_get_ctx(aff);
+	if (type == isl_dim_out)
+		isl_die(ctx, isl_error_invalid,
+			"output/set dimension does not have a coefficient",
+			return 0);
+	if (type == isl_dim_in)
+		type = isl_dim_set;
+
+	if (pos >= isl_local_space_dim(aff->ls, type))
+		isl_die(ctx, isl_error_invalid,
+			"position out of bounds", return 0);
+
+	pos += isl_local_space_offset(aff->ls, type);
+	return isl_int_sgn(aff->v->el[1 + pos]);
 }
 
 /* Replace the denominator of "aff" by "v".
@@ -3009,49 +3052,6 @@ __isl_give isl_pw_aff *isl_pw_aff_scale_down(__isl_take isl_pw_aff *pwaff,
 	return pwaff;
 }
 
-/* Divide "pa" by "f".
- */
-__isl_give isl_pw_aff *isl_pw_aff_scale_down_val(__isl_take isl_pw_aff *pa,
-	__isl_take isl_val *f)
-{
-	int i;
-
-	if (!pa || !f)
-		goto error;
-
-	if (isl_val_is_one(f)) {
-		isl_val_free(f);
-		return pa;
-	}
-
-	if (!isl_val_is_rat(f))
-		isl_die(isl_pw_aff_get_ctx(pa), isl_error_invalid,
-			"expecting rational factor", goto error);
-	if (!isl_val_is_pos(f))
-		isl_die(isl_pw_aff_get_ctx(pa), isl_error_invalid,
-			"factor needs to be positive", goto error);
-
-	pa = isl_pw_aff_cow(pa);
-	if (!pa)
-		return NULL;
-	if (pa->n == 0)
-		return pa;
-
-	for (i = 0; i < pa->n; ++i) {
-		pa->p[i].aff = isl_aff_scale_down_val(pa->p[i].aff,
-							isl_val_copy(f));
-		if (!pa->p[i].aff)
-			goto error;
-	}
-
-	isl_val_free(f);
-	return pa;
-error:
-	isl_pw_aff_free(pa);
-	isl_val_free(f);
-	return NULL;
-}
-
 __isl_give isl_pw_aff *isl_pw_aff_floor(__isl_take isl_pw_aff *pwaff)
 {
 	int i;
@@ -4147,6 +4147,17 @@ __isl_give isl_pw_multi_aff *isl_pw_multi_aff_union_add(
 	__isl_take isl_pw_multi_aff *pma1, __isl_take isl_pw_multi_aff *pma2)
 {
 	return isl_pw_multi_aff_union_add_(pma1, pma2);
+}
+
+/* Compute the sum of "upma1" and "upma2" on the union of their domains,
+ * with the actual sum on the shared domain and
+ * the defined expression on the symmetric difference of the domains.
+ */
+__isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_union_add(
+	__isl_take isl_union_pw_multi_aff *upma1,
+	__isl_take isl_union_pw_multi_aff *upma2)
+{
+	return isl_union_pw_multi_aff_union_add_(upma1, upma2);
 }
 
 /* Given two piecewise multi-affine expressions A -> B and C -> D,
@@ -5582,7 +5593,7 @@ static int bin_entry(void **entry, void *user)
 	isl_pw_multi_aff *pma = *entry;
 
 	data->pma = pma;
-	if (isl_hash_table_foreach(data->upma2->dim->ctx, &data->upma2->table,
+	if (isl_hash_table_foreach(data->upma2->space->ctx, &data->upma2->table,
 				   data->fn, data) < 0)
 		return -1;
 
@@ -5611,9 +5622,9 @@ static __isl_give isl_union_pw_multi_aff *bin_op(
 		goto error;
 
 	data.upma2 = upma2;
-	data.res = isl_union_pw_multi_aff_alloc(isl_space_copy(upma1->dim),
+	data.res = isl_union_pw_multi_aff_alloc(isl_space_copy(upma1->space),
 				       upma1->table.n);
-	if (isl_hash_table_foreach(upma1->dim->ctx, &upma1->table,
+	if (isl_hash_table_foreach(upma1->space->ctx, &upma1->table,
 				   &bin_entry, &data) < 0)
 		goto error;
 
@@ -5941,9 +5952,9 @@ __isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_scale_multi_val(
 		goto error;
 
 	data.mv = mv;
-	data.res = isl_union_pw_multi_aff_alloc(isl_space_copy(upma->dim),
+	data.res = isl_union_pw_multi_aff_alloc(isl_space_copy(upma->space),
 						upma->table.n);
-	if (isl_hash_table_foreach(upma->dim->ctx, &upma->table,
+	if (isl_hash_table_foreach(upma->space->ctx, &upma->table,
 		       &union_pw_multi_aff_scale_multi_val_entry, &data) < 0)
 		goto error;
 
@@ -6679,4 +6690,120 @@ int isl_pw_aff_plain_cmp(__isl_keep isl_pw_aff *pa1,
 	}
 
 	return 0;
+}
+
+/* Return a piecewise affine expression that is equal to "v" on "domain".
+ */
+__isl_give isl_pw_aff *isl_pw_aff_val_on_domain(__isl_take isl_set *domain,
+	__isl_take isl_val *v)
+{
+	isl_space *space;
+	isl_local_space *ls;
+	isl_aff *aff;
+
+	space = isl_set_get_space(domain);
+	ls = isl_local_space_from_space(space);
+	aff = isl_aff_val_on_domain(ls, v);
+
+	return isl_pw_aff_alloc(domain, aff);
+}
+
+/* Return a multi affine expression that is equal to "mv" on domain
+ * space "space".
+ */
+__isl_give isl_multi_aff *isl_multi_aff_multi_val_on_space(
+	__isl_take isl_space *space, __isl_take isl_multi_val *mv)
+{
+	int i, n;
+	isl_space *space2;
+	isl_local_space *ls;
+	isl_multi_aff *ma;
+
+	if (!space || !mv)
+		goto error;
+
+	n = isl_multi_val_dim(mv, isl_dim_set);
+	space2 = isl_multi_val_get_space(mv);
+	space2 = isl_space_align_params(space2, isl_space_copy(space));
+	space = isl_space_align_params(space, isl_space_copy(space2));
+	space = isl_space_map_from_domain_and_range(space, space2);
+	ma = isl_multi_aff_alloc(isl_space_copy(space));
+	ls = isl_local_space_from_space(isl_space_domain(space));
+	for (i = 0; i < n; ++i) {
+		isl_val *v;
+		isl_aff *aff;
+
+		v = isl_multi_val_get_val(mv, i);
+		aff = isl_aff_val_on_domain(isl_local_space_copy(ls), v);
+		ma = isl_multi_aff_set_aff(ma, i, aff);
+	}
+	isl_local_space_free(ls);
+
+	isl_multi_val_free(mv);
+	return ma;
+error:
+	isl_space_free(space);
+	isl_multi_val_free(mv);
+	return NULL;
+}
+
+/* Return a piecewise multi-affine expression
+ * that is equal to "mv" on "domain".
+ */
+__isl_give isl_pw_multi_aff *isl_pw_multi_aff_multi_val_on_domain(
+	__isl_take isl_set *domain, __isl_take isl_multi_val *mv)
+{
+	isl_space *space;
+	isl_multi_aff *ma;
+
+	space = isl_set_get_space(domain);
+	ma = isl_multi_aff_multi_val_on_space(space, mv);
+
+	return isl_pw_multi_aff_alloc(domain, ma);
+}
+
+/* Internal data structure for isl_union_pw_multi_aff_multi_val_on_domain.
+ * mv is the value that should be attained on each domain set
+ * res collects the results
+ */
+struct isl_union_pw_multi_aff_multi_val_on_domain_data {
+	isl_multi_val *mv;
+	isl_union_pw_multi_aff *res;
+};
+
+/* Create an isl_pw_multi_aff equal to data->mv on "domain"
+ * and add it to data->res.
+ */
+static int pw_multi_aff_multi_val_on_domain(__isl_take isl_set *domain,
+	void *user)
+{
+	struct isl_union_pw_multi_aff_multi_val_on_domain_data *data = user;
+	isl_pw_multi_aff *pma;
+	isl_multi_val *mv;
+
+	mv = isl_multi_val_copy(data->mv);
+	pma = isl_pw_multi_aff_multi_val_on_domain(domain, mv);
+	data->res = isl_union_pw_multi_aff_add_pw_multi_aff(data->res, pma);
+
+	return data->res ? 0 : -1;
+}
+
+/* Return a union piecewise multi-affine expression
+ * that is equal to "mv" on "domain".
+ */
+__isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_multi_val_on_domain(
+	__isl_take isl_union_set *domain, __isl_take isl_multi_val *mv)
+{
+	struct isl_union_pw_multi_aff_multi_val_on_domain_data data;
+	isl_space *space;
+
+	space = isl_union_set_get_space(domain);
+	data.res = isl_union_pw_multi_aff_empty(space);
+	data.mv = mv;
+	if (isl_union_set_foreach_set(domain,
+			&pw_multi_aff_multi_val_on_domain, &data) < 0)
+		data.res = isl_union_pw_multi_aff_free(data.res);
+	isl_union_set_free(domain);
+	isl_multi_val_free(mv);
+	return data.res;
 }

@@ -895,12 +895,13 @@ __isl_give isl_union_pw_qpolynomial_fold *isl_union_pw_qpolynomial_fold_fold_pw_
 	if (!part || !u)
 		goto error;
 
-	isl_assert(u->dim->ctx, isl_space_match(part->dim, isl_dim_param, u->dim,
-					      isl_dim_param), goto error);
+	isl_assert(u->space->ctx,
+	    isl_space_match(part->dim, isl_dim_param, u->space, isl_dim_param),
+	    goto error);
 
 	hash = isl_space_get_hash(part->dim);
-	entry = isl_hash_table_find(u->dim->ctx, &u->table, hash,
-				    &has_dim, part->dim, 1);
+	entry = isl_hash_table_find(u->space->ctx, &u->table, hash,
+				    &has_same_domain_space, part->dim, 1);
 	if (!entry)
 		goto error;
 
@@ -1364,8 +1365,8 @@ static int add_pwqp(__isl_take isl_pw_qpolynomial *pwqp, void *user)
 
 	ctx = pwqp->dim->ctx;
 	hash = isl_space_get_hash(pwqp->dim);
-	entry = isl_hash_table_find(ctx, &(*upwf)->table,
-				     hash, &has_dim, pwqp->dim, 1);
+	entry = isl_hash_table_find(ctx, &(*upwf)->table, hash,
+				     &has_same_domain_space, pwqp->dim, 1);
 	if (!entry)
 		goto error;
 
@@ -1677,6 +1678,32 @@ __isl_give isl_qpolynomial_fold *isl_qpolynomial_fold_scale_val(
 
 	isl_val_free(v);
 	return fold;
+error:
+	isl_val_free(v);
+	isl_qpolynomial_fold_free(fold);
+	return NULL;
+}
+
+/* Divide "fold" by "v".
+ */
+__isl_give isl_qpolynomial_fold *isl_qpolynomial_fold_scale_down_val(
+	__isl_take isl_qpolynomial_fold *fold, __isl_take isl_val *v)
+{
+	if (!fold || !v)
+		goto error;
+
+	if (isl_val_is_one(v)) {
+		isl_val_free(v);
+		return fold;
+	}
+	if (!isl_val_is_rat(v))
+		isl_die(isl_qpolynomial_fold_get_ctx(fold), isl_error_invalid,
+			"expecting rational factor", goto error);
+	if (isl_val_is_zero(v))
+		isl_die(isl_val_get_ctx(v), isl_error_invalid,
+			"cannot scale down by zero", goto error);
+
+	return isl_qpolynomial_fold_scale_val(fold, isl_val_inv(v));
 error:
 	isl_val_free(v);
 	isl_qpolynomial_fold_free(fold);

@@ -8,6 +8,9 @@
 extern "C" {
 #endif
 
+unsigned isl_union_set_dim(__isl_keep isl_union_set *uset,
+	enum isl_dim_type type);
+
 __isl_constructor
 __isl_give isl_union_set *isl_union_set_from_basic_set(
 	__isl_take isl_basic_set *bset);
@@ -91,6 +94,8 @@ int isl_union_set_is_subset(__isl_keep isl_union_set *uset1,
 __isl_export
 int isl_union_set_is_equal(__isl_keep isl_union_set *uset1,
 	__isl_keep isl_union_set *uset2);
+int isl_union_set_is_disjoint(__isl_keep isl_union_set *uset1,
+	__isl_keep isl_union_set *uset2);
 __isl_export
 int isl_union_set_is_strict_subset(__isl_keep isl_union_set *uset1,
 	__isl_keep isl_union_set *uset2);
@@ -130,6 +135,7 @@ __isl_give isl_union_set *isl_union_set_read_from_file(isl_ctx *ctx,
 __isl_constructor
 __isl_give isl_union_set *isl_union_set_read_from_str(isl_ctx *ctx,
 	const char *str);
+__isl_give char *isl_union_set_to_str(__isl_keep isl_union_set *uset);
 __isl_give isl_printer *isl_printer_print_union_set(__isl_take isl_printer *p,
 	__isl_keep isl_union_set *uset);
 void isl_union_set_dump(__isl_keep isl_union_set *uset);

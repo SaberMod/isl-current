@@ -715,6 +715,18 @@ int isl_set_find_dim_by_id(__isl_keep isl_set *set, enum isl_dim_type type,
 	return isl_map_find_dim_by_id(set, type, id);
 }
 
+/* Return the position of the dimension of the given type and name
+ * in "bmap".
+ * Return -1 if no such dimension can be found.
+ */
+int isl_basic_map_find_dim_by_name(__isl_keep isl_basic_map *bmap,
+	enum isl_dim_type type, const char *name)
+{
+	if (!bmap)
+		return -1;
+	return isl_space_find_dim_by_name(bmap->dim, type, name);
+}
+
 int isl_map_find_dim_by_name(__isl_keep isl_map *map, enum isl_dim_type type,
 	const char *name)
 {
@@ -5061,6 +5073,26 @@ __isl_give isl_map *isl_map_range_map(__isl_take isl_map *map)
 error:
 	isl_map_free(map);
 	return NULL;
+}
+
+/* Given a wrapped map of the form A[B -> C],
+ * return the map A[B -> C] -> B.
+ */
+__isl_give isl_map *isl_set_wrapped_domain_map(__isl_take isl_set *set)
+{
+	isl_id *id;
+	isl_map *map;
+
+	if (!set)
+		return NULL;
+	if (!isl_set_has_tuple_id(set))
+		return isl_map_domain_map(isl_set_unwrap(set));
+
+	id = isl_set_get_tuple_id(set);
+	map = isl_map_domain_map(isl_set_unwrap(set));
+	map = isl_map_set_tuple_id(map, isl_dim_in, id);
+
+	return map;
 }
 
 __isl_give isl_map *isl_map_from_set(__isl_take isl_set *set,
@@ -9696,6 +9728,106 @@ __isl_give isl_map *isl_map_range_product(__isl_take isl_map *map1,
 {
 	return isl_map_align_params_map_map_and(map1, map2,
 						&map_range_product_aligned);
+}
+
+/* Given a map of the form [A -> B] -> [C -> D], return the map A -> C.
+ */
+__isl_give isl_map *isl_map_factor_domain(__isl_take isl_map *map)
+{
+	isl_space *space;
+	int total1, keep1, total2, keep2;
+
+	if (!map)
+		return NULL;
+	if (!isl_space_domain_is_wrapping(map->dim) ||
+	    !isl_space_range_is_wrapping(map->dim))
+		isl_die(isl_map_get_ctx(map), isl_error_invalid,
+			"not a product", return isl_map_free(map));
+
+	space = isl_map_get_space(map);
+	total1 = isl_space_dim(space, isl_dim_in);
+	total2 = isl_space_dim(space, isl_dim_out);
+	space = isl_space_factor_domain(space);
+	keep1 = isl_space_dim(space, isl_dim_in);
+	keep2 = isl_space_dim(space, isl_dim_out);
+	map = isl_map_project_out(map, isl_dim_in, keep1, total1 - keep1);
+	map = isl_map_project_out(map, isl_dim_out, keep2, total2 - keep2);
+	map = isl_map_reset_space(map, space);
+
+	return map;
+}
+
+/* Given a map of the form [A -> B] -> [C -> D], return the map B -> D.
+ */
+__isl_give isl_map *isl_map_factor_range(__isl_take isl_map *map)
+{
+	isl_space *space;
+	int total1, keep1, total2, keep2;
+
+	if (!map)
+		return NULL;
+	if (!isl_space_domain_is_wrapping(map->dim) ||
+	    !isl_space_range_is_wrapping(map->dim))
+		isl_die(isl_map_get_ctx(map), isl_error_invalid,
+			"not a product", return isl_map_free(map));
+
+	space = isl_map_get_space(map);
+	total1 = isl_space_dim(space, isl_dim_in);
+	total2 = isl_space_dim(space, isl_dim_out);
+	space = isl_space_factor_range(space);
+	keep1 = isl_space_dim(space, isl_dim_in);
+	keep2 = isl_space_dim(space, isl_dim_out);
+	map = isl_map_project_out(map, isl_dim_in, 0, total1 - keep1);
+	map = isl_map_project_out(map, isl_dim_out, 0, total2 - keep2);
+	map = isl_map_reset_space(map, space);
+
+	return map;
+}
+
+/* Given a map of the form [A -> B] -> C, return the map A -> C.
+ */
+__isl_give isl_map *isl_map_domain_factor_domain(__isl_take isl_map *map)
+{
+	isl_space *space;
+	int total, keep;
+
+	if (!map)
+		return NULL;
+	if (!isl_space_domain_is_wrapping(map->dim))
+		isl_die(isl_map_get_ctx(map), isl_error_invalid,
+			"domain is not a product", return isl_map_free(map));
+
+	space = isl_map_get_space(map);
+	total = isl_space_dim(space, isl_dim_in);
+	space = isl_space_domain_factor_domain(space);
+	keep = isl_space_dim(space, isl_dim_in);
+	map = isl_map_project_out(map, isl_dim_in, keep, total - keep);
+	map = isl_map_reset_space(map, space);
+
+	return map;
+}
+
+/* Given a map of the form [A -> B] -> C, return the map B -> C.
+ */
+__isl_give isl_map *isl_map_domain_factor_range(__isl_take isl_map *map)
+{
+	isl_space *space;
+	int total, keep;
+
+	if (!map)
+		return NULL;
+	if (!isl_space_domain_is_wrapping(map->dim))
+		isl_die(isl_map_get_ctx(map), isl_error_invalid,
+			"domain is not a product", return isl_map_free(map));
+
+	space = isl_map_get_space(map);
+	total = isl_space_dim(space, isl_dim_in);
+	space = isl_space_domain_factor_range(space);
+	keep = isl_space_dim(space, isl_dim_in);
+	map = isl_map_project_out(map, isl_dim_in, 0, total - keep);
+	map = isl_map_reset_space(map, space);
+
+	return map;
 }
 
 /* Given a map A -> [B -> C], extract the map A -> B.
