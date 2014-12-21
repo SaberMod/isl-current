@@ -84,6 +84,10 @@ __isl_give isl_union_set *isl_union_set_preimage_union_pw_multi_aff(
 	__isl_take isl_union_set *uset,
 	__isl_take isl_union_pw_multi_aff *upma);
 
+__isl_give isl_union_set *isl_union_set_project_out(
+	__isl_take isl_union_set *uset,
+	enum isl_dim_type type, unsigned first, unsigned n);
+
 int isl_union_set_is_params(__isl_keep isl_union_set *uset);
 __isl_export
 int isl_union_set_is_empty(__isl_keep isl_union_set *uset);
@@ -139,6 +143,8 @@ __isl_give char *isl_union_set_to_str(__isl_keep isl_union_set *uset);
 __isl_give isl_printer *isl_printer_print_union_set(__isl_take isl_printer *p,
 	__isl_keep isl_union_set *uset);
 void isl_union_set_dump(__isl_keep isl_union_set *uset);
+
+ISL_DECLARE_LIST_FN(union_set)
 
 #if defined(__cplusplus)
 }
