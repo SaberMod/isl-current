@@ -528,6 +528,9 @@ __isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_copy(
 __isl_null isl_union_pw_multi_aff *isl_union_pw_multi_aff_free(
 	__isl_take isl_union_pw_multi_aff *upma);
 
+__isl_give isl_union_pw_multi_aff *isl_union_set_identity_union_pw_multi_aff(
+	__isl_take isl_union_set *uset);
+
 __isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_add_pw_multi_aff(
 	__isl_take isl_union_pw_multi_aff *upma,
 	__isl_take isl_pw_multi_aff *pma);
@@ -660,6 +663,8 @@ __isl_give isl_multi_pw_aff *isl_multi_pw_aff_read_from_str(isl_ctx *ctx,
 __isl_give isl_printer *isl_printer_print_multi_pw_aff(
 	__isl_take isl_printer *p, __isl_keep isl_multi_pw_aff *mpa);
 void isl_multi_pw_aff_dump(__isl_keep isl_multi_pw_aff *mpa);
+
+ISL_DECLARE_LIST_FN(union_pw_multi_aff)
 
 #if defined(__cplusplus)
 }

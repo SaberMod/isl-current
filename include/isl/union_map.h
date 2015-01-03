@@ -58,6 +58,8 @@ __isl_give isl_union_map *isl_union_map_affine_hull(
 __isl_export
 __isl_give isl_union_map *isl_union_map_polyhedral_hull(
 	__isl_take isl_union_map *umap);
+__isl_give isl_union_map *isl_union_map_remove_redundancies(
+	__isl_take isl_union_map *umap);
 __isl_give isl_union_map *isl_union_map_simple_hull(
 	__isl_take isl_union_map *umap);
 __isl_export
@@ -243,6 +245,8 @@ __isl_give isl_union_map *isl_union_map_align_params(
 	__isl_take isl_union_map *umap, __isl_take isl_space *model);
 __isl_give isl_union_set *isl_union_set_align_params(
 	__isl_take isl_union_set *uset, __isl_take isl_space *model);
+
+ISL_DECLARE_LIST_FN(union_map)
 
 #if defined(__cplusplus)
 }

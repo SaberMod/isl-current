@@ -14,13 +14,13 @@
 
 #define ISL_DIM_H
 #include <isl_map_private.h>
+#include <isl_union_map_private.h>
 #include <isl/ctx.h>
 #include <isl/hash.h>
 #include <isl/aff.h>
 #include <isl/map.h>
 #include <isl/set.h>
 #include <isl_space_private.h>
-#include <isl_union_map_private.h>
 #include <isl/union_set.h>
 #include <isl/deprecated/union_map_int.h>
 
@@ -1634,6 +1634,24 @@ error:
 	return NULL;
 }
 
+/* Remove redundant constraints in each of the basic maps of "umap".
+ * Since removing redundant constraints does not change the meaning
+ * or the space, the operation can be performed in-place.
+ */
+__isl_give isl_union_map *isl_union_map_remove_redundancies(
+	__isl_take isl_union_map *umap)
+{
+	return inplace(umap, &isl_map_remove_redundancies);
+}
+
+/* Remove redundant constraints in each of the basic sets of "uset".
+ */
+__isl_give isl_union_set *isl_union_set_remove_redundancies(
+	__isl_take isl_union_set *uset)
+{
+	return isl_union_map_remove_redundancies(uset);
+}
+
 __isl_give isl_union_map *isl_union_map_coalesce(
 	__isl_take isl_union_map *umap)
 {
@@ -1933,6 +1951,38 @@ static int identity_entry(void **entry, void *user)
 __isl_give isl_union_map *isl_union_set_identity(__isl_take isl_union_set *uset)
 {
 	return cond_un_op(uset, &identity_entry);
+}
+
+/* Construct an identity isl_pw_multi_aff on "set" and add it to *res.
+ */
+static int identity_upma(__isl_take isl_set *set, void *user)
+{
+	isl_union_pw_multi_aff **res = user;
+	isl_space *space;
+	isl_pw_multi_aff *pma;
+
+	space = isl_space_map_from_set(isl_set_get_space(set));
+	pma = isl_pw_multi_aff_identity(space);
+	pma = isl_pw_multi_aff_intersect_domain(pma, set);
+	*res = isl_union_pw_multi_aff_add_pw_multi_aff(*res, pma);
+
+	return *res ? 0 : -1;
+}
+
+/* Return an identity function on "uset" in the form
+ * of an isl_union_pw_multi_aff.
+ */
+__isl_give isl_union_pw_multi_aff *isl_union_set_identity_union_pw_multi_aff(
+	__isl_take isl_union_set *uset)
+{
+	isl_union_pw_multi_aff *res;
+
+	res = isl_union_pw_multi_aff_empty(isl_union_set_get_space(uset));
+	if (isl_union_set_foreach_set(uset, &identity_upma, &res) < 0)
+		res = isl_union_pw_multi_aff_free(res);
+
+	isl_union_set_free(uset);
+	return res;
 }
 
 /* If "map" is of the form [A -> B] -> C, then add A -> C to "res".
@@ -3426,6 +3476,18 @@ __isl_give isl_union_map *isl_union_map_project_out(
 	return data.res;
 }
 
+/* Turn the "n" dimensions of type "type", starting at "first"
+ * into existentially quantified variables.
+ * Since the space of an isl_union_set only contains parameters,
+ * "type" is required to be equal to isl_dim_param.
+ */
+__isl_give isl_union_set *isl_union_set_project_out(
+	__isl_take isl_union_set *uset,
+	enum isl_dim_type type, unsigned first, unsigned n)
+{
+	return isl_union_map_project_out(uset, type, first, n);
+}
+
 /* Internal data structure for isl_union_map_involves_dims.
  * "first" and "n" are the arguments for the isl_map_involves_dims calls.
  */
@@ -3472,4 +3534,33 @@ int isl_union_map_involves_dims(__isl_keep isl_union_map *umap,
 		return -1;
 
 	return !excludes;
+}
+
+/* Return the union of the elements in the list "list".
+ */
+__isl_give isl_union_set *isl_union_set_list_union(
+	__isl_take isl_union_set_list *list)
+{
+	int i, n;
+	isl_ctx *ctx;
+	isl_space *space;
+	isl_union_set *res;
+
+	if (!list)
+		return NULL;
+
+	ctx = isl_union_set_list_get_ctx(list);
+	space = isl_space_params_alloc(ctx, 0);
+	res = isl_union_set_empty(space);
+
+	n = isl_union_set_list_n_union_set(list);
+	for (i = 0; i < n; ++i) {
+		isl_union_set *uset_i;
+
+		uset_i = isl_union_set_list_get_union_set(list, i);
+		res = isl_union_set_union(res, uset_i);
+	}
+
+	isl_union_set_list_free(list);
+	return res;
 }

@@ -3739,8 +3739,15 @@ earlier dimensions before those that involve later dimensions.
 		__isl_take isl_map *map);
 
 	#include <isl/union_set.h>
+	__isl_give isl_union_set *isl_union_set_project_out(
+		__isl_take isl_union_set *uset,
+		enum isl_dim_type type,
+		unsigned first, unsigned n);
 	__isl_give isl_set *isl_union_set_params(
 		__isl_take isl_union_set *uset);
+
+The function C<isl_union_set_project_out> can only project out
+parameters.
 
 	#include <isl/union_map.h>
 	__isl_give isl_union_map *isl_union_map_project_out(
@@ -4050,6 +4057,9 @@ of C<pwaff> where C<pwaff> is non-negative.
 		__isl_take isl_set *set);
 	__isl_give isl_union_map *isl_union_set_identity(
 		__isl_take isl_union_set *uset);
+	__isl_give isl_union_pw_multi_aff *
+	isl_union_set_identity_union_pw_multi_aff(
+		__isl_take isl_union_set *uset);
 
 Construct an identity relation on the given (union) set.
 
@@ -4175,14 +4185,27 @@ equalities.
 
 =item * Removing redundant constraints
 
+	#include <isl/set.h>
 	__isl_give isl_basic_set *isl_basic_set_remove_redundancies(
 		__isl_take isl_basic_set *bset);
 	__isl_give isl_set *isl_set_remove_redundancies(
 		__isl_take isl_set *set);
+
+	#include <isl/union_set.h>
+	__isl_give isl_union_set *
+	isl_union_set_remove_redundancies(
+		__isl_take isl_union_set *uset);
+
+	#include <isl/map.h>
 	__isl_give isl_basic_map *isl_basic_map_remove_redundancies(
 		__isl_take isl_basic_map *bmap);
 	__isl_give isl_map *isl_map_remove_redundancies(
 		__isl_take isl_map *map);
+
+	#include <isl/union_map.h>
+	__isl_give isl_union_map *
+	isl_union_map_remove_redundancies(
+		__isl_take isl_union_map *umap);
 
 =item * Convex hull
 
@@ -4213,6 +4236,10 @@ variables, then the result of these operations is currently undefined.
 		__isl_take isl_map *map);
 	__isl_give isl_basic_map *isl_map_simple_hull(
 		__isl_take isl_map *map);
+	__isl_give isl_basic_map *
+	isl_map_unshifted_simple_hull_from_map_list(
+		__isl_take isl_map *map,
+		__isl_take isl_map_list *list);
 
 	#include <isl/union_map.h>
 	__isl_give isl_union_map *isl_union_map_simple_hull(
@@ -4224,7 +4251,8 @@ In particular, the output is described by translates
 of the constraints describing the basic sets or relations in the input.
 In case of C<isl_set_unshifted_simple_hull>, only the original
 constraints are used, without any translation.
-In case of C<isl_set_unshifted_simple_hull_from_set_list>, the
+In case of C<isl_set_unshifted_simple_hull_from_set_list> and
+C<isl_map_unshifted_simple_hull_from_map_list>, the
 constraints are taken from the elements of the second argument.
 
 =begin latex
@@ -4925,6 +4953,8 @@ the same (number of) parameters.
 	__isl_give isl_basic_map *isl_basic_map_intersect(
 		__isl_take isl_basic_map *bmap1,
 		__isl_take isl_basic_map *bmap2);
+	__isl_give isl_basic_map *isl_basic_map_list_intersect(
+		__isl_take isl_basic_map_list *list);
 	__isl_give isl_map *isl_map_intersect_params(
 		__isl_take isl_map *map,
 		__isl_take isl_set *params);
@@ -5029,21 +5059,30 @@ at least one element and all elements need to live in the same space.
 
 =item * Union
 
+	#include <isl/set.h>
 	__isl_give isl_set *isl_basic_set_union(
 		__isl_take isl_basic_set *bset1,
 		__isl_take isl_basic_set *bset2);
-	__isl_give isl_map *isl_basic_map_union(
-		__isl_take isl_basic_map *bmap1,
-		__isl_take isl_basic_map *bmap2);
 	__isl_give isl_set *isl_set_union(
 		__isl_take isl_set *set1,
 		__isl_take isl_set *set2);
+
+	#include <isl/map.h>
+	__isl_give isl_map *isl_basic_map_union(
+		__isl_take isl_basic_map *bmap1,
+		__isl_take isl_basic_map *bmap2);
 	__isl_give isl_map *isl_map_union(
 		__isl_take isl_map *map1,
 		__isl_take isl_map *map2);
+
+	#include <isl/union_set.h>
 	__isl_give isl_union_set *isl_union_set_union(
 		__isl_take isl_union_set *uset1,
 		__isl_take isl_union_set *uset2);
+	__isl_give isl_union_set *isl_union_set_list_union(
+		__isl_take isl_union_set_list *list);
+
+	#include <isl/union_map.h>
 	__isl_give isl_union_map *isl_union_map_union(
 		__isl_take isl_union_map *umap1,
 		__isl_take isl_union_map *umap2);
@@ -6245,8 +6284,10 @@ where C<cond> is zero.
 =head2 Lists
 
 Lists are defined over several element types, including
-C<isl_val>, C<isl_id>, C<isl_aff>, C<isl_pw_aff>, C<isl_constraint>,
-C<isl_basic_set>, C<isl_set>, C<isl_ast_expr> and C<isl_ast_node>.
+C<isl_val>, C<isl_id>, C<isl_aff>, C<isl_pw_aff>,
+C<isl_union_pw_multi_aff>, C<isl_constraint>,
+C<isl_basic_set>, C<isl_set>, C<isl_basic_map>, C<isl_map>, C<isl_union_set>,
+C<isl_union_map>, C<isl_ast_expr> and C<isl_ast_node>.
 Here we take lists of C<isl_set>s as an example.
 Lists can be created, copied, modified and freed using the following functions.
 

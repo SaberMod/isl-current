@@ -957,6 +957,22 @@ int isl_tab_mark_redundant(struct isl_tab *tab, int row)
 	}
 }
 
+/* Mark "tab" as a rational tableau.
+ * If it wasn't marked as a rational tableau already and if we may
+ * need to undo changes, then arrange for the marking to be undone
+ * during the undo.
+ */
+int isl_tab_mark_rational(struct isl_tab *tab)
+{
+	if (!tab)
+		return -1;
+	if (!tab->rational && tab->need_undo)
+		if (isl_tab_push(tab, isl_tab_undo_rational) < 0)
+			return -1;
+	tab->rational = 1;
+	return 0;
+}
+
 int isl_tab_mark_empty(struct isl_tab *tab)
 {
 	if (!tab)
@@ -1409,7 +1425,8 @@ static int row_at_most_neg_one(struct isl_tab *tab, int row)
 /* Return 1 if "var" can attain values <= -1.
  * Return 0 otherwise.
  *
- * The sample value of "var" is assumed to be non-negative when the
+ * If the variable "var" is supposed to be non-negative (is_nonneg is set),
+ * then the sample value of "var" is assumed to be non-negative when the
  * the function is called.  If 1 is returned then the constraint
  * is not redundant and the sample value is made non-negative again before
  * the function returns.
@@ -1447,7 +1464,7 @@ int isl_tab_min_at_most_neg_one(struct isl_tab *tab, struct isl_tab_var *var)
 	do {
 		find_pivot(tab, var, var, -1, &row, &col);
 		if (row == var->index) {
-			if (restore_row(tab, var) < -1)
+			if (var->is_nonneg && restore_row(tab, var) < -1)
 				return -1;
 			return 1;
 		}
@@ -1982,12 +1999,9 @@ int isl_tab_add_eq(struct isl_tab *tab, isl_int *eq)
 	var = &tab->con[r];
 	row = var->index;
 	if (row_is_manifestly_zero(tab, row)) {
-		if (snap) {
-			if (isl_tab_rollback(tab, snap) < 0)
-				return -1;
-		} else
-			drop_row(tab, row);
-		return 0;
+		if (snap)
+			return isl_tab_rollback(tab, snap);
+		return drop_row(tab, row);
 	}
 
 	if (tab->bmap) {
@@ -2545,37 +2559,37 @@ static int cut_to_hyperplane(struct isl_tab *tab, struct isl_tab_var *var)
  * even after the relaxation, so we need to restore it.
  * We therefore prefer to pivot a column up to a row, if possible.
  */
-struct isl_tab *isl_tab_relax(struct isl_tab *tab, int con)
+int isl_tab_relax(struct isl_tab *tab, int con)
 {
 	struct isl_tab_var *var;
-	unsigned off = 2 + tab->M;
 
 	if (!tab)
-		return NULL;
+		return -1;
 
 	var = &tab->con[con];
 
 	if (var->is_row && (var->index < 0 || var->index < tab->n_redundant))
 		isl_die(tab->mat->ctx, isl_error_invalid,
-			"cannot relax redundant constraint", goto error);
+			"cannot relax redundant constraint", return -1);
 	if (!var->is_row && (var->index < 0 || var->index < tab->n_dead))
 		isl_die(tab->mat->ctx, isl_error_invalid,
-			"cannot relax dead constraint", goto error);
+			"cannot relax dead constraint", return -1);
 
 	if (!var->is_row && !max_is_manifestly_unbounded(tab, var))
 		if (to_row(tab, var, 1) < 0)
-			goto error;
+			return -1;
 	if (!var->is_row && !min_is_manifestly_unbounded(tab, var))
 		if (to_row(tab, var, -1) < 0)
-			goto error;
+			return -1;
 
 	if (var->is_row) {
 		isl_int_add(tab->mat->row[var->index][1],
 		    tab->mat->row[var->index][1], tab->mat->row[var->index][0]);
 		if (restore_row(tab, var) < 0)
-			goto error;
+			return -1;
 	} else {
 		int i;
+		unsigned off = 2 + tab->M;
 
 		for (i = 0; i < tab->n_row; ++i) {
 			if (isl_int_is_zero(tab->mat->row[i][off + var->index]))
@@ -2587,12 +2601,9 @@ struct isl_tab *isl_tab_relax(struct isl_tab *tab, int con)
 	}
 
 	if (isl_tab_push_var(tab, isl_tab_undo_relax, var) < 0)
-		goto error;
+		return -1;
 
-	return tab;
-error:
-	isl_tab_free(tab);
-	return NULL;
+	return 0;
 }
 
 /* Remove the sign constraint from constraint "con".
@@ -3108,8 +3119,7 @@ static int perform_undo_var(struct isl_tab *tab, struct isl_tab_undo *undo)
 	case isl_tab_undo_allocate:
 		if (undo->u.var_index >= 0) {
 			isl_assert(tab->mat->ctx, !var->is_row, return -1);
-			drop_col(tab, var->index);
-			break;
+			return drop_col(tab, var->index);
 		}
 		if (!var->is_row) {
 			if (!max_is_manifestly_unbounded(tab, var)) {
@@ -3122,8 +3132,7 @@ static int perform_undo_var(struct isl_tab *tab, struct isl_tab_undo *undo)
 				if (to_row(tab, var, 0) < 0)
 					return -1;
 		}
-		drop_row(tab, var->index);
-		break;
+		return drop_row(tab, var->index);
 	case isl_tab_undo_relax:
 		return unrelax(tab, var);
 	case isl_tab_undo_unrestrict:
@@ -3219,6 +3228,9 @@ static int perform_undo(struct isl_tab *tab, struct isl_tab_undo *undo) WARN_UNU
 static int perform_undo(struct isl_tab *tab, struct isl_tab_undo *undo)
 {
 	switch (undo->type) {
+	case isl_tab_undo_rational:
+		tab->rational = 0;
+		break;
 	case isl_tab_undo_empty:
 		tab->empty = 0;
 		break;

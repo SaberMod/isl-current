@@ -147,6 +147,8 @@ __isl_give isl_map *isl_map_remove_redundancies(__isl_take isl_map *map);
 __isl_give isl_basic_map *isl_map_simple_hull(__isl_take isl_map *map);
 __isl_give isl_basic_map *isl_map_unshifted_simple_hull(
 	__isl_take isl_map *map);
+__isl_give isl_basic_map *isl_map_unshifted_simple_hull_from_map_list(
+	__isl_take isl_map *map, __isl_take isl_map_list *list);
 
 __isl_export
 __isl_give isl_basic_map *isl_basic_map_intersect_domain(
@@ -160,6 +162,8 @@ __isl_export
 __isl_give isl_basic_map *isl_basic_map_intersect(
 		__isl_take isl_basic_map *bmap1,
 		__isl_take isl_basic_map *bmap2);
+__isl_give isl_basic_map *isl_basic_map_list_intersect(
+	__isl_take isl_basic_map_list *list);
 __isl_export
 __isl_give isl_map *isl_basic_map_union(
 		__isl_take isl_basic_map *bmap1,
@@ -689,6 +693,9 @@ __isl_give isl_map *isl_map_from_aff(__isl_take isl_aff *aff);
 __isl_give isl_map *isl_map_from_multi_aff(__isl_take isl_multi_aff *maff);
 
 __isl_give isl_pw_aff *isl_map_dim_max(__isl_take isl_map *map, int pos);
+
+ISL_DECLARE_LIST_FN(basic_map)
+ISL_DECLARE_LIST_FN(map)
 
 #if defined(__cplusplus)
 }

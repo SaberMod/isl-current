@@ -157,7 +157,7 @@ static void drop(struct isl_map *map, int i, struct isl_tab **tabs)
 }
 
 /* Replace the pair of basic maps i and j by the basic map bounded
- * by the valid constraints in both basic maps and the constraint
+ * by the valid constraints in both basic maps and the constraints
  * in extra (if not NULL).
  */
 static int fuse(struct isl_map *map, int i, int j,
@@ -257,28 +257,41 @@ error:
  * constraints of i lie entirely within basic map j.
  * If so, replace the pair by the basic map consisting of the valid
  * constraints in both basic maps.
+ * Checking whether the facet lies entirely within basic map j
+ * is performed by checking whether the constraints of basic map j
+ * are valid for the facet.  These tests are performed on a rational
+ * tableau to avoid the theoretical possibility that a constraint
+ * that was considered to be a cut constraint for the entire basic map i
+ * happens to be considered to be a valid constraint for the facet,
+ * even though it cuts off the same rational points.
  *
  * To see that we are not introducing any extra points, call the
  * two basic maps A and B and the resulting map U and let x
  * be an element of U \setminus ( A \cup B ).
- * Then there is a pair of cut constraints c_1 and c_2 in A and B such that x
- * violates them.  Let X be the intersection of U with the opposites
- * of these constraints.  Then x \in X.
- * The facet corresponding to c_1 contains the corresponding facet of A.
- * This facet is entirely contained in B, so c_2 is valid on the facet.
- * However, since it is also (part of) a facet of X, -c_2 is also valid
- * on the facet.  This means c_2 is saturated on the facet, so c_1 and
- * c_2 must be opposites of each other, but then x could not violate
- * both of them.
+ * A line connecting x with an element of A \cup B meets a facet F
+ * of either A or B.  Assume it is a facet of B and let c_1 be
+ * the corresponding facet constraint.  We have c_1(x) < 0 and
+ * so c_1 is a cut constraint.  This implies that there is some
+ * (possibly rational) point x' satisfying the constraints of A
+ * and the opposite of c_1 as otherwise c_1 would have been marked
+ * valid for A.  The line connecting x and x' meets a facet of A
+ * in a (possibly rational) point that also violates c_1, but this
+ * is impossible since all cut constraints of B are valid for all
+ * cut facets of A.
+ * In case F is a facet of A rather than B, then we can apply the
+ * above reasoning to find a facet of B separating x from A \cup B first.
  */
 static int check_facets(struct isl_map *map, int i, int j,
 	struct isl_tab **tabs, int *ineq_i, int *ineq_j)
 {
 	int k, l;
-	struct isl_tab_undo *snap;
+	struct isl_tab_undo *snap, *snap2;
 	unsigned n_eq = map->p[i]->n_eq;
 
 	snap = isl_tab_snap(tabs[i]);
+	if (isl_tab_mark_rational(tabs[i]) < 0)
+		return -1;
+	snap2 = isl_tab_snap(tabs[i]);
 
 	for (k = 0; k < map->p[i]->n_ineq; ++k) {
 		if (ineq_i[k] != STATUS_CUT)
@@ -293,15 +306,17 @@ static int check_facets(struct isl_map *map, int i, int j,
 			if (stat != STATUS_VALID)
 				break;
 		}
-		if (isl_tab_rollback(tabs[i], snap) < 0)
+		if (isl_tab_rollback(tabs[i], snap2) < 0)
 			return -1;
 		if (l < map->p[j]->n_ineq)
 			break;
 	}
 
-	if (k < map->p[i]->n_ineq)
-		/* BAD CUT PAIR */
+	if (k < map->p[i]->n_ineq) {
+		if (isl_tab_rollback(tabs[i], snap) < 0)
+			return -1;
 		return 0;
+	}
 	return fuse(map, i, j, tabs, NULL, ineq_i, NULL, ineq_j, NULL);
 }
 
@@ -515,7 +530,8 @@ static int is_adj_eq_extension(struct isl_map *map, int i, int j, int k,
 		return 0;
 
 	snap = isl_tab_snap(tabs[i]);
-	tabs[i] = isl_tab_relax(tabs[i], n_eq + k);
+	if (isl_tab_relax(tabs[i], n_eq + k) < 0)
+		return -1;
 	snap2 = isl_tab_snap(tabs[i]);
 	if (isl_tab_select_facet(tabs[i], n_eq + k) < 0)
 		return -1;
@@ -734,7 +750,7 @@ static int check_wraps(__isl_keep isl_mat *wraps, int first,
 	return 0;
 }
 
-/* Return a set that corresponds to the non-redudant constraints
+/* Return a set that corresponds to the non-redundant constraints
  * (as recorded in tab) of bmap.
  *
  * It's important to remove the redundant constraints as some
@@ -745,34 +761,33 @@ static int check_wraps(__isl_keep isl_mat *wraps, int first,
  * and should therefore continue to be ignored ever after.
  * Otherwise, the relaxation might be thwarted by some of
  * these constraints.
+ *
+ * Update the underlying set to ensure that the dimension doesn't change.
+ * Otherwise the integer divisions could get dropped if the tab
+ * turns out to be empty.
  */
 static __isl_give isl_set *set_from_updated_bmap(__isl_keep isl_basic_map *bmap,
 	struct isl_tab *tab)
 {
+	isl_basic_set *bset;
+
 	bmap = isl_basic_map_copy(bmap);
-	bmap = isl_basic_map_cow(bmap);
-	bmap = isl_basic_map_update_from_tab(bmap, tab);
-	return isl_set_from_basic_set(isl_basic_map_underlying_set(bmap));
+	bset = isl_basic_map_underlying_set(bmap);
+	bset = isl_basic_set_cow(bset);
+	bset = isl_basic_set_update_from_tab(bset, tab);
+	return isl_set_from_basic_set(bset);
 }
 
-/* Given a basic set i with a constraint k that is adjacent to either the
- * whole of basic set j or a facet of basic set j, check if we can wrap
- * both the facet corresponding to k and the facet of j (or the whole of j)
+/* Given a basic set i with a constraint k that is adjacent to
+ * basic set j, check if we can wrap
+ * both the facet corresponding to k and basic map j
  * around their ridges to include the other set.
  * If so, replace the pair of basic sets by their union.
  *
  * All constraints of i (except k) are assumed to be valid for j.
- *
- * However, the constraints of j may not be valid for i and so
- * we have to check that the wrapping constraints for j are valid for i.
- *
- * In the case where j has a facet adjacent to i, tab[j] is assumed
- * to have been restricted to this facet, so that the non-redundant
- * constraints in tab[j] are the ridges of the facet.
- * Note that for the purpose of wrapping, it does not matter whether
- * we wrap the ridges of i around the whole of j or just around
- * the facet since all the other constraints are assumed to be valid for j.
- * In practice, we wrap to include the whole of j.
+ * This means that there is no real need to wrap the ridges of
+ * the faces of basic map i around basic map j but since we do,
+ * we have to check that the resulting wrapping constraints are valid for i.
  *        ____			  _____
  *       /    | 		 /     \
  *      /     ||  		/      |
@@ -1100,7 +1115,7 @@ error:
 	return -1;
 }
 
-/* Check if either i or j has a single cut constraint that can
+/* Check if either i or j has only cut inequalities that can
  * be used to wrap in (a facet of) the other basic set.
  * if so, replace the pair by their union.
  */
@@ -1528,7 +1543,7 @@ done:
 	isl_basic_map_free(bmap);
 	free(eq_i);
 	free(ineq_i);
-	return 0;
+	return changed;
 error:
 	isl_basic_map_free(bmap);
 	free(eq_i);

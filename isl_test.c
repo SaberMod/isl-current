@@ -1167,6 +1167,12 @@ struct {
 	{ "{ : 1 = 0 }", "{ : 1 = 0 }", "{ : }" },
 	{ "[M] -> { [x] : exists (e0 = floor((-2 + x)/3): 3e0 = -2 + x) }",
 	  "[M] -> { [3M] }" , "[M] -> { [x] : 1 = 0 }" },
+	{ "{ [m, n, a, b] : a <= 2147 + n }",
+	  "{ [m, n, a, b] : (m >= 1 and n >= 1 and a <= 2148 - m and "
+			"b <= 2148 - n and b >= 0 and b >= 2149 - n - a) or "
+			"(n >= 1 and a >= 0 and b <= 2148 - n - a and "
+			"b >= 0) }",
+	  "{ [m, n, ku, kl] }" },
 };
 
 static int test_gist(struct isl_ctx *ctx)
@@ -1179,20 +1185,20 @@ static int test_gist(struct isl_ctx *ctx)
 
 	for (i = 0; i < ARRAY_SIZE(gist_tests); ++i) {
 		int equal_input;
-		isl_basic_set *copy;
+		isl_set *set1, *set2, *copy;
 
-		bset1 = isl_basic_set_read_from_str(ctx, gist_tests[i].set);
-		bset2 = isl_basic_set_read_from_str(ctx, gist_tests[i].context);
-		copy = isl_basic_set_copy(bset1);
-		bset1 = isl_basic_set_gist(bset1, bset2);
-		bset2 = isl_basic_set_read_from_str(ctx, gist_tests[i].gist);
-		equal = isl_basic_set_is_equal(bset1, bset2);
-		isl_basic_set_free(bset1);
-		isl_basic_set_free(bset2);
-		bset1 = isl_basic_set_read_from_str(ctx, gist_tests[i].set);
-		equal_input = isl_basic_set_is_equal(bset1, copy);
-		isl_basic_set_free(bset1);
-		isl_basic_set_free(copy);
+		set1 = isl_set_read_from_str(ctx, gist_tests[i].set);
+		set2 = isl_set_read_from_str(ctx, gist_tests[i].context);
+		copy = isl_set_copy(set1);
+		set1 = isl_set_gist(set1, set2);
+		set2 = isl_set_read_from_str(ctx, gist_tests[i].gist);
+		equal = isl_set_is_equal(set1, set2);
+		isl_set_free(set1);
+		isl_set_free(set2);
+		set1 = isl_set_read_from_str(ctx, gist_tests[i].set);
+		equal_input = isl_set_is_equal(set1, copy);
+		isl_set_free(set1);
+		isl_set_free(copy);
 		if (equal < 0 || equal_input < 0)
 			return -1;
 		if (!equal)
