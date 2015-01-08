@@ -173,7 +173,7 @@ am__libisl_la_SOURCES_DIST = mp_get_memory_functions.c isl_int_gmp.h \
 	isl_id_to_ast_expr.c isl_id_to_pw_aff.c isl_ilp.c \
 	isl_ilp_private.h isl_input.c isl_int.h \
 	isl_local_space_private.h isl_local_space.c isl_lp.c \
-	isl_lp_private.h isl_map.c isl_map_simplify.c \
+	isl_lp_private.h isl_map.c isl_map_list.c isl_map_simplify.c \
 	isl_map_subtract.c isl_map_private.h isl_map_to_basic_set.c \
 	isl_mat.c isl_mat_private.h isl_morph.c isl_morph.h isl_id.c \
 	isl_id_private.h isl_obj.c isl_options.c isl_options_private.h \
@@ -210,7 +210,7 @@ am_libisl_la_OBJECTS = $(am__objects_2) $(am__objects_3) isl_aff.lo \
 	isl_farkas.lo isl_flow.lo isl_fold.lo isl_hash.lo \
 	isl_id_to_ast_expr.lo isl_id_to_pw_aff.lo isl_ilp.lo \
 	isl_input.lo isl_local_space.lo isl_lp.lo isl_map.lo \
-	isl_map_simplify.lo isl_map_subtract.lo \
+	isl_map_list.lo isl_map_simplify.lo isl_map_subtract.lo \
 	isl_map_to_basic_set.lo isl_mat.lo isl_morph.lo isl_id.lo \
 	isl_obj.lo isl_options.lo isl_output.lo isl_point.lo \
 	isl_polynomial.lo isl_printer.lo print.lo isl_range.lo \
@@ -832,6 +832,7 @@ libisl_la_SOURCES = \
 	isl_lp.c \
 	isl_lp_private.h \
 	isl_map.c \
+	isl_map_list.c \
 	isl_map_simplify.c \
 	isl_map_subtract.c \
 	isl_map_private.h \
@@ -1245,6 +1246,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isl_local_space.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isl_lp.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isl_map.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isl_map_list.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isl_map_simplify.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isl_map_subtract.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isl_map_to_basic_set.Plo@am__quote@
