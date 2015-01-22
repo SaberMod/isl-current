@@ -19,6 +19,7 @@
 #include <isl/map.h>
 #include <isl_reordering.h>
 #include <isl/vec.h>
+#include <isl/hash.h>
 #include <isl_blk.h>
 
 /* A "basic map" is a relation between two sets of variables,
@@ -197,6 +198,8 @@ struct isl_basic_set *isl_basic_set_cow(struct isl_basic_set *bset);
 struct isl_basic_map *isl_basic_map_cow(struct isl_basic_map *bmap);
 struct isl_set *isl_set_cow(struct isl_set *set);
 struct isl_map *isl_map_cow(struct isl_map *map);
+
+uint32_t isl_basic_map_get_hash(__isl_keep isl_basic_map *bmap);
 
 struct isl_basic_map *isl_basic_map_set_to_empty(struct isl_basic_map *bmap);
 struct isl_basic_set *isl_basic_set_set_to_empty(struct isl_basic_set *bset);
@@ -403,6 +406,9 @@ int isl_basic_map_output_defining_equality(__isl_keep isl_basic_map *bmap,
 
 __isl_give isl_basic_map *isl_basic_map_reduce_coefficients(
 	__isl_take isl_basic_map *bmap);
+
+__isl_give isl_basic_map *isl_basic_map_shift_div(
+	__isl_take isl_basic_map *bmap, int div, isl_int shift);
 
 __isl_give isl_basic_map_list *isl_map_get_basic_map_list(
 	__isl_keep isl_map *map);
