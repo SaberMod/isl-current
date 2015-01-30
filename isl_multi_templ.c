@@ -1221,6 +1221,25 @@ error:
 	return NULL;
 }
 
+/* Subtract "multi2" from "multi1" and return the result.
+ *
+ * The parameters of "multi1" and "multi2" are assumed to have been aligned.
+ */
+static __isl_give MULTI(BASE) *FN(MULTI(BASE),sub_aligned)(
+	__isl_take MULTI(BASE) *multi1, __isl_take MULTI(BASE) *multi2)
+{
+	return FN(MULTI(BASE),bin_op)(multi1, multi2, &FN(EL,sub));
+}
+
+/* Subtract "multi2" from "multi1" and return the result.
+ */
+__isl_give MULTI(BASE) *FN(MULTI(BASE),sub)(__isl_take MULTI(BASE) *multi1,
+	__isl_take MULTI(BASE) *multi2)
+{
+	return FN(MULTI(BASE),align_params_multi_multi_and)(multi1, multi2,
+						&FN(MULTI(BASE),sub_aligned));
+}
+
 /* Multiply the elements of "multi" by "v" and return the result.
  */
 __isl_give MULTI(BASE) *FN(MULTI(BASE),scale_val)(__isl_take MULTI(BASE) *multi,
@@ -1369,6 +1388,42 @@ error:
 	return FN(MULTI(BASE),free)(multi);
 }
 
+/* Compute the residues of the elements of "multi" modulo
+ * the corresponding element of "mv" and return the result.
+ */
+__isl_give MULTI(BASE) *FN(MULTI(BASE),mod_multi_val)(
+	__isl_take MULTI(BASE) *multi, __isl_take isl_multi_val *mv)
+{
+	int i;
+
+	if (!multi || !mv)
+		goto error;
+
+	if (!isl_space_tuple_is_equal(multi->space, isl_dim_out,
+					mv->space, isl_dim_set))
+		isl_die(isl_multi_val_get_ctx(mv), isl_error_invalid,
+			"spaces don't match", goto error);
+
+	multi = FN(MULTI(BASE),cow)(multi);
+	if (!multi)
+		return NULL;
+
+	for (i = 0; i < multi->n; ++i) {
+		isl_val *v;
+
+		v = isl_multi_val_get_val(mv, i);
+		multi->p[i] = FN(EL,mod_val)(multi->p[i], v);
+		if (!multi->p[i])
+			goto error;
+	}
+
+	isl_multi_val_free(mv);
+	return multi;
+error:
+	isl_multi_val_free(mv);
+	return FN(MULTI(BASE),free)(multi);
+}
+
 #ifndef NO_MOVE_DIMS
 /* Move the "n" dimensions of "src_type" starting at "src_pos" of "multi"
  * to dimensions of "dst_type" at "dst_pos".
@@ -1494,5 +1549,26 @@ __isl_give isl_set *FN(MULTI(BASE),domain)(__isl_take MULTI(BASE) *multi)
 
 	FN(MULTI(BASE),free)(multi);
 	return dom;
+}
+#endif
+
+#ifndef NO_NEG
+/* Return the opposite of "multi".
+ */
+__isl_give MULTI(BASE) *FN(MULTI(BASE),neg)(__isl_take MULTI(BASE) *multi)
+{
+	int i;
+
+	multi = FN(MULTI(BASE),cow)(multi);
+	if (!multi)
+		return NULL;
+
+	for (i = 0; i < multi->n; ++i) {
+		multi->p[i] = FN(EL,neg)(multi->p[i]);
+		if (!multi->p[i])
+			return FN(MULTI(BASE),free)(multi);
+	}
+
+	return multi;
 }
 #endif

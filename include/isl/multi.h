@@ -110,10 +110,20 @@ __isl_give isl_multi_##BASE *isl_multi_##BASE##_scale_multi_val(	\
 __isl_give isl_multi_##BASE *isl_multi_##BASE##_scale_down_multi_val(	\
 	__isl_take isl_multi_##BASE *multi,				\
 	__isl_take isl_multi_val *mv);					\
+__isl_give isl_multi_##BASE *isl_multi_##BASE##_mod_multi_val(		\
+	__isl_take isl_multi_##BASE *multi,				\
+	__isl_take isl_multi_val *mv);					\
+__isl_give isl_multi_##BASE *isl_multi_##BASE##_sub(			\
+	__isl_take isl_multi_##BASE *multi1,				\
+	__isl_take isl_multi_##BASE *multi2);				\
 __isl_give isl_multi_##BASE *isl_multi_##BASE##_align_params(		\
 	__isl_take isl_multi_##BASE *multi,				\
 	__isl_take isl_space *model);					\
 __isl_give isl_multi_##BASE *isl_multi_##BASE##_from_range(		\
+	__isl_take isl_multi_##BASE *multi);
+
+#define ISL_DECLARE_MULTI_NEG(BASE)					\
+__isl_give isl_multi_##BASE *isl_multi_##BASE##_neg(		 	\
 	__isl_take isl_multi_##BASE *multi);
 
 #if defined(__cplusplus)

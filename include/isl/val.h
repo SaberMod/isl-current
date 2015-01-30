@@ -19,6 +19,7 @@ struct isl_multi_val;
 typedef struct isl_multi_val isl_multi_val;
 
 ISL_DECLARE_MULTI(val)
+ISL_DECLARE_MULTI_NEG(val)
 
 __isl_give isl_val *isl_val_zero(isl_ctx *ctx);
 __isl_give isl_val *isl_val_one(isl_ctx *ctx);
@@ -102,6 +103,8 @@ __isl_give isl_multi_val *isl_multi_val_add_val(__isl_take isl_multi_val *mv,
 __isl_give isl_multi_val *isl_multi_val_mod_val(__isl_take isl_multi_val *mv,
 	__isl_take isl_val *v);
 
+__isl_give isl_multi_val *isl_multi_val_read_from_str(isl_ctx *ctx,
+	const char *str);
 __isl_give isl_printer *isl_printer_print_multi_val(__isl_take isl_printer *p,
 	__isl_keep isl_multi_val *mv);
 void isl_multi_val_dump(__isl_keep isl_multi_val *mv);
