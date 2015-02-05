@@ -382,7 +382,6 @@ S(UNION,align) {
 	UNION *res;
 };
 
-#ifdef ALIGN_DOMAIN
 static int FN(UNION,align_entry)(__isl_take PART *part, void *user)
 {
 	isl_reordering *exp;
@@ -396,26 +395,41 @@ static int FN(UNION,align_entry)(__isl_take PART *part, void *user)
 
 	return 0;
 }
-#else
-static int FN(UNION,align_entry)(__isl_take PART *part, void *user)
+
+/* Reorder the parameters of "u" according to the given reordering.
+ */
+static __isl_give UNION *FN(UNION,realign_domain)(__isl_take UNION *u,
+	__isl_take isl_reordering *r)
 {
-	isl_reordering *exp;
-	S(UNION,align) *data = user;
+	S(UNION,align) data = { NULL, NULL };
 
-	exp = isl_reordering_extend_space(isl_reordering_copy(data->exp),
-				    FN(PART,get_space)(part));
+	if (!u || !r)
+		goto error;
 
-	data->res = FN(FN(UNION,add),PARTS)(data->res,
-					    FN(PART,realign)(part, exp));
-
-	return 0;
-}
+#ifdef HAS_TYPE
+	data.res = FN(UNION,alloc)(isl_space_copy(r->dim), u->type, u->table.n);
+#else
+	data.res = FN(UNION,alloc)(isl_space_copy(r->dim), u->table.n);
 #endif
+	data.exp = r;
+	if (FN(FN(UNION,foreach),PARTS)(u, &FN(UNION,align_entry), &data) < 0)
+		data.res = FN(UNION,free)(data.res);
 
+	isl_reordering_free(data.exp);
+	FN(UNION,free)(u);
+	return data.res;
+error:
+	FN(UNION,free)(u);
+	isl_reordering_free(r);
+	return NULL;
+}
+
+/* Align the parameters of "u" to those of "model".
+ */
 __isl_give UNION *FN(UNION,align_params)(__isl_take UNION *u,
 	__isl_take isl_space *model)
 {
-	S(UNION,align) data = { NULL, NULL };
+	isl_reordering *r;
 
 	if (!u || !model)
 		goto error;
@@ -426,28 +440,13 @@ __isl_give UNION *FN(UNION,align_params)(__isl_take UNION *u,
 	}
 
 	model = isl_space_params(model);
-	data.exp = isl_parameter_alignment_reordering(u->space, model);
-	if (!data.exp)
-		goto error;
-
-#ifdef HAS_TYPE
-	data.res = FN(UNION,alloc)(isl_space_copy(data.exp->dim),
-						u->type, u->table.n);
-#else
-	data.res = FN(UNION,alloc)(isl_space_copy(data.exp->dim), u->table.n);
-#endif
-	if (FN(FN(UNION,foreach),PARTS)(u, &FN(UNION,align_entry), &data) < 0)
-		goto error;
-
-	isl_reordering_free(data.exp);
-	FN(UNION,free)(u);
+	r = isl_parameter_alignment_reordering(u->space, model);
 	isl_space_free(model);
-	return data.res;
+
+	return FN(UNION,realign_domain)(u, r);
 error:
-	isl_reordering_free(data.exp);
-	FN(UNION,free)(u);
-	FN(UNION,free)(data.res);
 	isl_space_free(model);
+	FN(UNION,free)(u);
 	return NULL;
 }
 
