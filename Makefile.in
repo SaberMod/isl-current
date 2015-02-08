@@ -189,7 +189,7 @@ am__libisl_la_SOURCES_DIST = mp_get_memory_functions.c isl_int_gmp.h \
 	isl_transitive_closure.c isl_union_map.c \
 	isl_union_map_private.h isl_val.c isl_val_private.h \
 	isl_vec_private.h isl_vec.c isl_version.c \
-	isl_vertices_private.h isl_vertices.c
+	isl_vertices_private.h isl_vertices.c isl_yaml.h
 @GMP_FOR_MP_TRUE@@NEED_GET_MEMORY_FUNCTIONS_TRUE@am__objects_1 = mp_get_memory_functions.lo
 am__dirstamp = $(am__leading_dot)dirstamp
 @GMP_FOR_MP_FALSE@@IMATH_FOR_MP_TRUE@am__objects_2 = isl_imath.lo \
@@ -888,7 +888,8 @@ libisl_la_SOURCES = \
 	isl_vec.c \
 	isl_version.c \
 	isl_vertices_private.h \
-	isl_vertices.c
+	isl_vertices.c \
+	isl_yaml.h
 
 libisl_la_LIBADD = @MP_LIBS@
 libisl_la_LDFLAGS = -version-info @versioninfo@ \
