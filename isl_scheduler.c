@@ -462,6 +462,7 @@ struct isl_sched_edge {
  *	conflicting constraints
  *
  * scc represents the number of components
+ * weak is set if the components are weakly connected
  */
 struct isl_sched_graph {
 	isl_map_to_basic_set *intra_hmap;
@@ -495,6 +496,7 @@ struct isl_sched_graph {
 	int dst_scc;
 
 	int scc;
+	int weak;
 };
 
 /* Initialize node_table based on the list of nodes.
@@ -1247,6 +1249,7 @@ static int detect_ccs(isl_ctx *ctx, struct isl_sched_graph *graph, int weak)
 	if (!g)
 		return -1;
 
+	graph->weak = weak;
 	graph->scc = 0;
 	i = 0;
 	n = graph->n;
@@ -3302,27 +3305,47 @@ static int setup_carry_lp(isl_ctx *ctx, struct isl_sched_graph *graph)
 	return 0;
 }
 
+static int compute_component_schedule(isl_ctx *ctx,
+	struct isl_sched_graph *graph, int wcc);
+
+/* Comparison function for sorting the statements based on
+ * the corresponding value in "r".
+ */
+static int smaller_value(const void *a, const void *b, void *data)
+{
+	isl_vec *r = data;
+	const int *i1 = a;
+	const int *i2 = b;
+
+	return isl_int_cmp(r->el[*i1], r->el[*i2]);
+}
+
 /* If the schedule_split_scaled option is set and if the linear
  * parts of the scheduling rows for all nodes in the graphs have
- * non-trivial common divisor, then split off the constant term
- * from the linear part.
- * The constant term is then placed in a separate band and
- * the linear part is reduced.
+ * a non-trivial common divisor, then split off the remainder of the
+ * constant term modulo this common divisor from the linear part.
+ * Otherwise, continue with the construction of the schedule.
+ *
+ * If a non-trivial common divisor is found, then
+ * the linear part is reduced and the remainder is enforced
+ * by a piecewise constant schedule based on the order of these remainders.
+ * In particular, we assign an scc index based on the remainder and
+ * then rely on compute_component_schedule to insert the schedule row and
+ * to continue the schedule construction on each part.
  */
 static int split_scaled(isl_ctx *ctx, struct isl_sched_graph *graph)
 {
 	int i;
 	int row;
+	int scc;
 	isl_int gcd, gcd_i;
+	isl_vec *r;
+	int *order;
 
 	if (!ctx->opt->schedule_split_scaled)
-		return 0;
+		return compute_next_band(ctx, graph);
 	if (graph->n <= 1)
-		return 0;
-
-	if (graph->n_total_row >= graph->max_row)
-		isl_die(ctx, isl_error_internal,
-			"too many schedule rows", return -1);
+		return compute_next_band(ctx, graph);
 
 	isl_int_init(gcd);
 	isl_int_init(gcd_i);
@@ -3343,21 +3366,19 @@ static int split_scaled(isl_ctx *ctx, struct isl_sched_graph *graph)
 
 	if (isl_int_cmp_si(gcd, 1) <= 0) {
 		isl_int_clear(gcd);
-		return 0;
+		return compute_next_band(ctx, graph);
 	}
 
-	next_band(graph);
+	r = isl_vec_alloc(ctx, graph->n);
+	order = isl_calloc_array(ctx, int, graph->n);
+	if (!r || !order)
+		goto error;
 
 	for (i = 0; i < graph->n; ++i) {
 		struct isl_sched_node *node = &graph->node[i];
 
-		isl_map_free(node->sched_map);
-		node->sched_map = NULL;
-		node->sched = isl_mat_add_zero_rows(node->sched, 1);
-		if (!node->sched)
-			goto error;
-		isl_int_fdiv_r(node->sched->row[row + 1][0],
-			       node->sched->row[row][0], gcd);
+		order[i] = i;
+		isl_int_fdiv_r(r->el[i], node->sched->row[row][0], gcd);
 		isl_int_fdiv_q(node->sched->row[row][0],
 			       node->sched->row[row][0], gcd);
 		isl_int_mul(node->sched->row[row][0],
@@ -3365,20 +3386,33 @@ static int split_scaled(isl_ctx *ctx, struct isl_sched_graph *graph)
 		node->sched = isl_mat_scale_down_row(node->sched, row, gcd);
 		if (!node->sched)
 			goto error;
-		node->band[graph->n_total_row] = graph->n_band;
 	}
 
-	graph->n_total_row++;
+	if (isl_sort(order, graph->n, sizeof(order[0]), &smaller_value, r) < 0)
+		goto error;
+
+	scc = 0;
+	for (i = 0; i < graph->n; ++i) {
+		if (i > 0 && isl_int_ne(r->el[order[i - 1]], r->el[order[i]]))
+			++scc;
+		graph->node[order[i]].scc = scc;
+	}
+	graph->scc = ++scc;
+	graph->weak = 0;
 
 	isl_int_clear(gcd);
-	return 0;
+	isl_vec_free(r);
+	free(order);
+
+	if (update_edges(ctx, graph) < 0)
+		return -1;
+	next_band(graph);
+
+	return compute_component_schedule(ctx, graph, 0);
 error:
 	isl_int_clear(gcd);
 	return -1;
 }
-
-static int compute_component_schedule(isl_ctx *ctx,
-	struct isl_sched_graph *graph);
 
 /* Is the schedule row "sol" trivial on node "node"?
  * That is, is the solution zero on the dimensions orthogonal to
@@ -3469,6 +3503,9 @@ static int is_any_trivial(struct isl_sched_graph *graph,
  * graph->maxvar is computed based on these ranks.  The test for
  * whether more schedule rows are required in compute_schedule_wcc
  * is therefore not affected.
+ *
+ * Continue with the construction of the schedule in split_scaled
+ * after optionally checking for non-trivial common divisors.
  */
 static int carry_dependences(isl_ctx *ctx, struct isl_sched_graph *graph)
 {
@@ -3508,7 +3545,7 @@ static int carry_dependences(isl_ctx *ctx, struct isl_sched_graph *graph)
 		sol = isl_vec_free(sol);
 	} else if (trivial && graph->scc > 1) {
 		isl_vec_free(sol);
-		return compute_component_schedule(ctx, graph);
+		return compute_component_schedule(ctx, graph, 1);
 	}
 
 	if (update_schedule(graph, sol, 0, 0) < 0)
@@ -3516,10 +3553,7 @@ static int carry_dependences(isl_ctx *ctx, struct isl_sched_graph *graph)
 	if (trivial)
 		graph->n_row--;
 
-	if (split_scaled(ctx, graph) < 0)
-		return -1;
-
-	return compute_next_band(ctx, graph);
+	return split_scaled(ctx, graph);
 }
 
 /* Are there any (non-empty) (conditional) validity edges in the graph?
@@ -3975,25 +4009,31 @@ static int split_on_scc(isl_ctx *ctx, struct isl_sched_graph *graph)
 	return 0;
 }
 
-/* Compute a schedule for each component (identified by node->scc)
- * of the dependence graph separately and then combine the results.
- * Depending on the setting of schedule_fuse, a component may be
- * either weakly or strongly connected.
+/* Compute a schedule for each group of nodes identified by node->scc
+ * separately and then combine the results.
+ * If "wcc" is set then each of these groups belongs to a single
+ * weakly connected component in the dependence graph so that
+ * there is no need for compute_sub_schedule to look for weakly
+ * connected components.
+ *
+ * An extra schedule row is added first to separate the groups
+ * unless the groups represent weakly connected components
+ * (graph->weak is set) and the option schedule_separate_components
+ * is not set.
  *
  * The band_id is adjusted such that each component has a separate id.
  * Note that the band_id may have already been set to a value different
  * from zero by compute_split_schedule.
  */
 static int compute_component_schedule(isl_ctx *ctx,
-	struct isl_sched_graph *graph)
+	struct isl_sched_graph *graph, int wcc)
 {
-	int wcc, i;
+	int component, i;
 	int n, n_edge;
 	int n_total_row, orig_total_row;
 	int n_band, orig_band;
 
-	if (ctx->opt->schedule_fuse == ISL_SCHEDULE_FUSE_MIN ||
-	    ctx->opt->schedule_separate_components)
+	if (!graph->weak || ctx->opt->schedule_separate_components)
 		if (split_on_scc(ctx, graph) < 0)
 			return -1;
 
@@ -4003,20 +4043,20 @@ static int compute_component_schedule(isl_ctx *ctx,
 	orig_band = graph->n_band;
 	for (i = 0; i < graph->n; ++i)
 		graph->node[i].band_id[graph->n_band] += graph->node[i].scc;
-	for (wcc = 0; wcc < graph->scc; ++wcc) {
+	for (component = 0; component < graph->scc; ++component) {
 		n = 0;
 		for (i = 0; i < graph->n; ++i)
-			if (graph->node[i].scc == wcc)
+			if (graph->node[i].scc == component)
 				n++;
 		n_edge = 0;
 		for (i = 0; i < graph->n_edge; ++i)
-			if (graph->edge[i].src->scc == wcc &&
-			    graph->edge[i].dst->scc == wcc)
+			if (graph->edge[i].src->scc == component &&
+			    graph->edge[i].dst->scc == component)
 				n_edge++;
 
 		if (compute_sub_schedule(ctx, graph, n, n_edge,
 				    &node_scc_exactly,
-				    &edge_scc_exactly, wcc, 1) < 0)
+				    &edge_scc_exactly, component, wcc) < 0)
 			return -1;
 		if (graph->n_total_row > n_total_row)
 			n_total_row = graph->n_total_row;
@@ -4051,7 +4091,7 @@ static int compute_schedule(isl_ctx *ctx, struct isl_sched_graph *graph)
 	}
 
 	if (graph->scc > 1)
-		return compute_component_schedule(ctx, graph);
+		return compute_component_schedule(ctx, graph, 1);
 
 	return compute_schedule_wcc(ctx, graph);
 }
