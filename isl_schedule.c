@@ -429,6 +429,8 @@ static __isl_give isl_schedule_node *pullback_upma(
 
 /* Compute the pullback of "schedule" by the function represented by "upma".
  * In other words, plug in "upma" in the iteration domains of "schedule".
+ *
+ * The schedule tree is not allowed to contain any expansion nodes.
  */
 __isl_give isl_schedule *isl_schedule_pullback_union_pw_multi_aff(
 	__isl_take isl_schedule *schedule,
@@ -728,14 +730,23 @@ static __isl_give isl_band_list *construct_band_list(
 	switch (type) {
 	case isl_schedule_node_error:
 		goto error;
+	case isl_schedule_node_context:
+		isl_die(isl_schedule_node_get_ctx(node), isl_error_unsupported,
+			"context nodes not supported", goto error);
 	case isl_schedule_node_domain:
 		isl_die(isl_schedule_node_get_ctx(node), isl_error_invalid,
 			"internal domain nodes not allowed", goto error);
+	case isl_schedule_node_expansion:
+		isl_die(isl_schedule_node_get_ctx(node), isl_error_unsupported,
+			"expansion nodes not supported", goto error);
 	case isl_schedule_node_filter:
 		filter = isl_schedule_node_filter_get_filter(node);
 		domain = isl_union_set_intersect(domain, filter);
 		node = isl_schedule_node_child(node, 0);
 		return construct_band_list(node, domain, parent);
+	case isl_schedule_node_mark:
+		isl_die(isl_schedule_node_get_ctx(node), isl_error_unsupported,
+			"mark nodes not supported", goto error);
 	case isl_schedule_node_set:
 		ctx = isl_schedule_node_get_ctx(node);
 		if (isl_options_get_schedule_separate_components(ctx))
@@ -849,12 +860,16 @@ static __isl_give isl_printer *print_band_list(__isl_take isl_printer *p,
 /* Insert a band node with partial schedule "partial" between the domain
  * root node of "schedule" and its single child.
  * Return a pointer to the updated schedule.
+ *
+ * If any of the nodes in the tree depend on the set of outer band nodes
+ * then we refuse to insert the band node.
  */
 __isl_give isl_schedule *isl_schedule_insert_partial_schedule(
 	__isl_take isl_schedule *schedule,
 	__isl_take isl_multi_union_pw_aff *partial)
 {
 	isl_schedule_node *node;
+	int anchored;
 
 	node = isl_schedule_get_root(schedule);
 	isl_schedule_free(schedule);
@@ -865,6 +880,13 @@ __isl_give isl_schedule *isl_schedule_insert_partial_schedule(
 			"root node not a domain node", goto error);
 
 	node = isl_schedule_node_child(node, 0);
+	anchored = isl_schedule_node_is_subtree_anchored(node);
+	if (anchored < 0)
+		goto error;
+	if (anchored)
+		isl_die(isl_schedule_node_get_ctx(node), isl_error_invalid,
+			"cannot insert band node in anchored subtree",
+			goto error);
 	node = isl_schedule_node_insert_partial_schedule(node, partial);
 
 	schedule = isl_schedule_node_get_schedule(node);
@@ -875,6 +897,25 @@ error:
 	isl_schedule_node_free(node);
 	isl_multi_union_pw_aff_free(partial);
 	return NULL;
+}
+
+/* Insert a context node with constraints "context" between the domain
+ * root node of "schedule" and its single child.
+ * Return a pointer to the updated schedule.
+ */
+__isl_give isl_schedule *isl_schedule_insert_context(
+	__isl_take isl_schedule *schedule, __isl_take isl_set *context)
+{
+	isl_schedule_node *node;
+
+	node = isl_schedule_get_root(schedule);
+	isl_schedule_free(schedule);
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_insert_context(node, context);
+	schedule = isl_schedule_node_get_schedule(node);
+	isl_schedule_node_free(node);
+
+	return schedule;
 }
 
 /* Return a tree with as top-level node a filter corresponding to "filter" and
